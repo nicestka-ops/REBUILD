@@ -1,0 +1,47 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    color-scheme: dark;
+  }
+
+  body {
+    background-color: #111214;
+    color: #ffffff;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Hiragino Sans', 'Hiragino Kaku Gothic ProN', sans-serif;
+    overflow-x: hidden;
+  }
+}
+
+.font-mono-athletic {
+  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+.neon-glow-text {
+  text-shadow: 0 0 12px rgba(204, 255, 0, 0.45);
+}
+
+.red-glow-text {
+  text-shadow: 0 0 12px rgba(255, 59, 48, 0.55);
+}
+
+/* Custom range slider for debug mode */
+input[type='range'].volt-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  background: #2C2F36;
+  height: 6px;
+  border-radius: 999px;
+}
+
+input[type='range'].volt-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #CCFF00;
+  cursor: pointer;
+  box-shadow: 0 0 10px rgba(204, 255, 0, 0.7);
+}
