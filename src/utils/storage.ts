@@ -1,10 +1,13 @@
-import { AppState, ConditionLevel, DailyRecord, ShiftHours, WeightTiming } from '../types/rebuild';
+import { AppState, ConditionLevel, DailyRecord, ShiftHours, WeightTiming, WorkoutExerciseId } from '../types/rebuild';
 import { getJstRebuildDateKey, shiftDateKey } from './dateJst';
 import { computeNormalizedWeight } from './recoveryEngine';
 
 const STORAGE_KEY = 'rebuild_fitness_state_v1';
 
-export function createEmptyDailyRecord(dateKey: string): DailyRecord {
+export function createEmptyDailyRecord(
+  dateKey: string,
+  defaultShift: ShiftHours = 'none'
+): DailyRecord {
   return {
     dateKey,
     conditionLevel: null,
@@ -12,7 +15,7 @@ export function createEmptyDailyRecord(dateKey: string): DailyRecord {
     rawWeight: null,
     weightTiming: null,
     normalizedWeight: null,
-    shiftHours: 'none',
+    shiftHours: defaultShift,
     completedTasks: [],
     completedWorkouts: [],
     nutritionReserved: null,
@@ -23,26 +26,24 @@ function createInitialSeedState(): AppState {
   const todayKey = getJstRebuildDateKey();
   const records: Record<string, DailyRecord> = {};
 
-  // Seed past 10 days so trend charts & streak work immediately on first launch.
-  // Today is intentionally left unanswered so the JST 05:00 check-in banner is shown.
   const seedPlan: {
     daysAgo: number;
     condition: ConditionLevel;
     rawWeight: number;
     timing: WeightTiming;
     shift: ShiftHours;
-    workouts: ('squat' | 'pushup' | 'plank' | 'stretch')[];
+    workouts: WorkoutExerciseId[];
   }[] = [
-    { daysAgo: 10, condition: 1, rawWeight: 54.4, timing: 'normal', shift: 'long', workouts: ['stretch'] },
-    { daysAgo: 9, condition: 2, rawWeight: 54.3, timing: 'fasted', shift: 'medium', workouts: ['stretch'] },
-    { daysAgo: 8, condition: 2, rawWeight: 55.1, timing: 'post_meal', shift: 'long', workouts: ['stretch', 'plank'] },
-    { daysAgo: 7, condition: 3, rawWeight: 54.7, timing: 'fasted', shift: 'short', workouts: ['squat', 'stretch'] },
-    { daysAgo: 6, condition: 3, rawWeight: 55.3, timing: 'normal', shift: 'none', workouts: ['squat', 'pushup'] },
-    { daysAgo: 5, condition: 3, rawWeight: 55.8, timing: 'post_meal', shift: 'medium', workouts: ['plank', 'stretch'] },
-    { daysAgo: 4, condition: 4, rawWeight: 55.4, timing: 'fasted', shift: 'short', workouts: ['squat', 'pushup', 'plank'] },
-    { daysAgo: 3, condition: 3, rawWeight: 56.0, timing: 'normal', shift: 'long', workouts: ['stretch'] },
-    { daysAgo: 2, condition: 4, rawWeight: 55.9, timing: 'fasted', shift: 'none', workouts: ['squat', 'pushup', 'plank'] },
-    { daysAgo: 1, condition: 4, rawWeight: 56.7, timing: 'post_meal', shift: 'short', workouts: ['squat', 'pushup', 'stretch'] },
+    { daysAgo: 10, condition: 1, rawWeight: 54.4, timing: 'normal', shift: 'long', workouts: ['stretch_shift'] },
+    { daysAgo: 9, condition: 1, rawWeight: 54.3, timing: 'fasted', shift: 'medium', workouts: ['stretch_sleep'] },
+    { daysAgo: 8, condition: 2, rawWeight: 55.1, timing: 'post_meal', shift: 'long', workouts: ['stretch_shift', 'abs_plank'] },
+    { daysAgo: 7, condition: 2, rawWeight: 54.7, timing: 'fasted', shift: 'short', workouts: ['pushup_knee', 'stretch_morning'] },
+    { daysAgo: 6, condition: 2, rawWeight: 55.3, timing: 'normal', shift: 'none', workouts: ['pushup_normal', 'abs_crunch'] },
+    { daysAgo: 5, condition: 2, rawWeight: 55.8, timing: 'post_meal', shift: 'medium', workouts: ['abs_plank', 'stretch_sleep'] },
+    { daysAgo: 4, condition: 3, rawWeight: 55.4, timing: 'fasted', shift: 'short', workouts: ['pushup_normal', 'abs_crunch', 'abs_plank'] },
+    { daysAgo: 3, condition: 2, rawWeight: 56.0, timing: 'normal', shift: 'long', workouts: ['stretch_shift'] },
+    { daysAgo: 2, condition: 3, rawWeight: 55.9, timing: 'fasted', shift: 'none', workouts: ['pushup_normal', 'abs_legraise', 'abs_plank'] },
+    { daysAgo: 1, condition: 3, rawWeight: 56.7, timing: 'post_meal', shift: 'short', workouts: ['pushup_normal', 'abs_crunch', 'stretch_sleep'] },
   ];
 
   for (const item of seedPlan) {
@@ -66,6 +67,7 @@ function createInitialSeedState(): AppState {
     profile: {
       baselineWeight: 54.0,
       targetWeight: 61.0,
+      defaultShiftHours: 'none',
     },
     nutritionReserved: null,
   };

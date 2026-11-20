@@ -9,16 +9,20 @@ import {
   Zap,
 } from 'lucide-react';
 import { ConditionLevel, ShiftHours, WorkoutExerciseId } from '../types/rebuild';
+import { normalizeConditionLevel } from '../utils/recoveryEngine';
 
 interface WorkoutTabProps {
-  conditionLevel: ConditionLevel | null;
+  conditionLevel: ConditionLevel | number | null;
   shiftHours: ShiftHours;
   completedWorkouts: WorkoutExerciseId[];
   onToggleWorkout: (id: WorkoutExerciseId) => void;
 }
 
+type CategoryId = 'pushup' | 'abs' | 'stretch';
+
 interface ExerciseItem {
   id: WorkoutExerciseId;
+  category: CategoryId;
   name: string;
   enName: string;
   target: string;
@@ -26,44 +30,96 @@ interface ExerciseItem {
   defaultSeconds: number;
 }
 
+const CATEGORY_TABS: { id: 'all' | CategoryId; label: string }[] = [
+  { id: 'all', label: 'すべて' },
+  { id: 'pushup', label: '腕立て伏せ' },
+  { id: 'abs', label: '腹筋' },
+  { id: 'stretch', label: 'ストレッチ' },
+];
+
 const EXERCISES: ExerciseItem[] = [
+  // 腕立て伏せ
   {
-    id: 'squat',
-    name: 'スクワット',
-    enName: 'BODYWEIGHT SQUAT',
-    target: '下半身・基礎代謝',
-    repsLabel: '15回 × 2〜3セット',
+    id: 'pushup_normal',
+    category: 'pushup',
+    name: 'ノーマル腕立て伏せ',
+    enName: 'STANDARD PUSH-UP',
+    target: '胸・肩・二の腕',
+    repsLabel: '10〜15回 × 2〜3セット',
     defaultSeconds: 45,
   },
   {
-    id: 'pushup',
-    name: '腕立て伏せ',
-    enName: 'PUSH-UP',
-    target: '胸・肩・体幹',
-    repsLabel: '10〜15回 × 2〜3セット',
+    id: 'pushup_knee',
+    category: 'pushup',
+    name: '膝つき・スロー腕立て伏せ',
+    enName: 'KNEE / SLOW PUSH-UP',
+    target: '疲労時向け・フォーム重視',
+    repsLabel: '10回 × 2セット（3秒かけて下ろす）',
+    defaultSeconds: 45,
+  },
+  // 腹筋
+  {
+    id: 'abs_crunch',
+    category: 'abs',
+    name: 'クランチ',
+    enName: 'AB CRUNCH',
+    target: '腹直筋上部',
+    repsLabel: '15〜20回 × 2〜3セット',
     defaultSeconds: 40,
   },
   {
-    id: 'plank',
+    id: 'abs_legraise',
+    category: 'abs',
+    name: 'レッグレイズ',
+    enName: 'LEG RAISE',
+    target: '下腹部・腸腰筋',
+    repsLabel: '12〜15回 × 2セット',
+    defaultSeconds: 40,
+  },
+  {
+    id: 'abs_plank',
+    category: 'abs',
     name: 'プランク',
     enName: 'FRONT PLANK',
-    target: '腹圧・姿勢安定',
+    target: '体幹・姿勢安定（秒数タイマー）',
     repsLabel: '30〜60秒 × 2セット',
     defaultSeconds: 45,
   },
+  // ストレッチ
   {
-    id: 'stretch',
-    name: '全身ストレッチ',
-    enName: 'RECOVERY STRETCH',
-    target: '疲労抜き・可動域',
-    repsLabel: '各部位 30秒',
+    id: 'stretch_shift',
+    category: 'stretch',
+    name: 'バイト後リカバリーストレッチ',
+    enName: 'POST-SHIFT RECOVERY',
+    target: '腰・ふくらはぎ・肩の疲労抜き',
+    repsLabel: '2〜3分（各部位30秒）',
+    defaultSeconds: 120,
+  },
+  {
+    id: 'stretch_sleep',
+    category: 'stretch',
+    name: '就寝前リラックスストレッチ',
+    enName: 'PRE-SLEEP RELAX',
+    target: '副交感神経・深い睡眠',
+    repsLabel: '3分（深呼吸しながら）',
+    defaultSeconds: 180,
+  },
+  {
+    id: 'stretch_morning',
+    category: 'stretch',
+    name: '起床後ストレッチ',
+    enName: 'MORNING MOBILITY',
+    target: '血流促進・朝の目覚め',
+    repsLabel: '1〜2分（全身伸ばし）',
     defaultSeconds: 60,
   },
 ];
 
 function playBeep(freq: number = 880, durationMs: number = 140) {
   try {
-    const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+    const AudioCtx =
+      window.AudioContext ||
+      (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
     if (!AudioCtx) return;
     const ctx = new AudioCtx();
     const osc = ctx.createOscillator();
@@ -87,15 +143,15 @@ export const WorkoutTab: React.FC<WorkoutTabProps> = ({
   completedWorkouts,
   onToggleWorkout,
 }) => {
-  // Timer state
-  const [mode, setMode] = useState<'countdown' | 'interval'>('interval');
-  const [workSec, setWorkSec] = useState<number>(40);
+  const [selectedCategory, setSelectedCategory] = useState<'all' | CategoryId>('all');
+  const [mode, setMode] = useState<'countdown' | 'interval'>('countdown');
+  const [workSec, setWorkSec] = useState<number>(45);
   const [restSec, setRestSec] = useState<number>(15);
   const [totalSets, setTotalSets] = useState<number>(3);
 
   const [phase, setPhase] = useState<'work' | 'rest'>('work');
   const [currentSet, setCurrentSet] = useState<number>(1);
-  const [secondsLeft, setSecondsLeft] = useState<number>(40);
+  const [secondsLeft, setSecondsLeft] = useState<number>(45);
   const [isRunning, setIsRunning] = useState<boolean>(false);
 
   const intervalRef = useRef<number | null>(null);
@@ -113,14 +169,12 @@ export const WorkoutTab: React.FC<WorkoutTabProps> = ({
       setSecondsLeft((prev) => {
         if (prev > 1) return prev - 1;
 
-        // Time hit 0
         if (mode === 'countdown') {
           playBeep(1046, 260);
           setIsRunning(false);
           return 0;
         }
 
-        // Interval mode transition
         if (phase === 'work') {
           if (currentSet >= totalSets) {
             playBeep(1046, 300);
@@ -164,32 +218,38 @@ export const WorkoutTab: React.FC<WorkoutTabProps> = ({
   };
 
   const maxDuration = phase === 'work' ? workSec : restSec;
-  const progressPct = maxDuration > 0 ? Math.round(((maxDuration - secondsLeft) / maxDuration) * 100) : 0;
+  const progressPct =
+    maxDuration > 0 ? Math.round(((maxDuration - secondsLeft) / maxDuration) * 100) : 0;
 
-  // Recommended menu based on condition & shift
-  const isFatigued = (conditionLevel !== null && conditionLevel <= 2) || shiftHours === 'long';
-  const isPeak = conditionLevel !== null && conditionLevel >= 4 && shiftHours !== 'long';
+  const norm = normalizeConditionLevel(conditionLevel);
+  const isFatigued = norm === 1 || shiftHours === 'long';
+  const isPeak = norm === 3 && shiftHours !== 'long';
 
   const recommendation = isFatigued
     ? {
         badge: 'RECOVERY FOCUS',
-        title: '疲労回復優先メニュー',
-        desc: '今日は無理に追い込まず「全身ストレッチ」と軽い「プランク」で血流を促しましょう。',
-        recommendedIds: ['stretch', 'plank'] as WorkoutExerciseId[],
+        title: '疲労回復・低負荷おすすめメニュー',
+        desc: '無理は禁物です。「バイト後リカバリーストレッチ」「就寝前リラックスストレッチ」「膝つき・スロー腕立て」でケアしましょう。',
+        recommendedIds: ['stretch_shift', 'stretch_sleep', 'pushup_knee'] as WorkoutExerciseId[],
       }
     : isPeak
     ? {
         badge: 'BUILD & GAIN',
         title: '筋力リビルド強化メニュー',
-        desc: '好調なコンディションです！「スクワット」「腕立て伏せ」「プランク」で筋量とStageを引き上げましょう。',
-        recommendedIds: ['squat', 'pushup', 'plank'] as WorkoutExerciseId[],
+        desc: '好調なコンディションです！「ノーマル腕立て伏せ」「クランチ」「レッグレイズ」「プランク」で上半身と体幹を鍛えましょう。',
+        recommendedIds: ['pushup_normal', 'abs_crunch', 'abs_legraise', 'abs_plank'] as WorkoutExerciseId[],
       }
     : {
         badge: 'BALANCED',
-        title: '基礎コンディション維持メニュー',
-        desc: 'スクワット＋ストレッチの組み合わせで、筋力維持と疲労ケアを両立しましょう。',
-        recommendedIds: ['squat', 'stretch'] as WorkoutExerciseId[],
+        title: 'バランス維持おすすめメニュー',
+        desc: '「膝つき・スロー腕立て」「プランク」「起床後／就寝前ストレッチ」で無理なくコンディションを底上げしましょう。',
+        recommendedIds: ['pushup_knee', 'abs_plank', 'stretch_morning'] as WorkoutExerciseId[],
       };
+
+  const filteredExercises =
+    selectedCategory === 'all'
+      ? EXERCISES
+      : EXERCISES.filter((e) => e.category === selectedCategory);
 
   const mins = String(Math.floor(secondsLeft / 60)).padStart(2, '0');
   const secs = String(secondsLeft % 60).padStart(2, '0');
@@ -204,32 +264,23 @@ export const WorkoutTab: React.FC<WorkoutTabProps> = ({
             {recommendation.badge}
           </span>
           <span className="text-[11px] font-semibold text-[#8E929B]">
-            体調 {conditionLevel ? `Lv.${conditionLevel}` : '未回答'}
+            体調: {norm === 1 ? '不調' : norm === 2 ? '普通' : norm === 3 ? '好調' : '未回答'}
           </span>
         </div>
         <h2 className="text-base font-extrabold text-white">{recommendation.title}</h2>
         <p className="text-xs text-[#8E929B] mt-1 leading-relaxed">{recommendation.desc}</p>
       </div>
 
-      {/* Countdown & Interval Timer */}
+      {/* Countdown & Interval Timer (supports seconds & minutes) */}
       <div className="rounded-2xl bg-[#1C1E22] border border-[#2C2F36] p-4 space-y-3.5">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Timer className="w-4 h-4 text-[#CCFF00]" />
             <h3 className="text-sm font-extrabold text-white tracking-wide">
-              INTERVAL &amp; COUNTDOWN TIMER
+              WORKOUT &amp; STRETCH TIMER
             </h3>
           </div>
           <div className="flex items-center gap-1 bg-[#111214] p-1 rounded-lg border border-[#2C2F36]">
-            <button
-              type="button"
-              onClick={() => applyPreset(40, 15, 'interval')}
-              className={`px-2 py-0.5 rounded text-[11px] font-bold cursor-pointer ${
-                mode === 'interval' ? 'bg-[#CCFF00] text-black' : 'text-[#8E929B]'
-              }`}
-            >
-              インターバル
-            </button>
             <button
               type="button"
               onClick={() => applyPreset(45, 0, 'countdown')}
@@ -239,32 +290,37 @@ export const WorkoutTab: React.FC<WorkoutTabProps> = ({
             >
               カウントダウン
             </button>
+            <button
+              type="button"
+              onClick={() => applyPreset(40, 15, 'interval')}
+              className={`px-2 py-0.5 rounded text-[11px] font-bold cursor-pointer ${
+                mode === 'interval' ? 'bg-[#CCFF00] text-black' : 'text-[#8E929B]'
+              }`}
+            >
+              インターバル
+            </button>
           </div>
         </div>
 
-        {/* Big Timer Display */}
         <div className="rounded-xl bg-[#111214] border border-[#2C2F36] p-4 flex flex-col items-center">
-          <div className="flex items-center gap-2 mb-1">
-            <span
-              className={`text-[11px] font-extrabold tracking-widest px-2 py-0.5 rounded ${
-                phase === 'work'
-                  ? 'bg-[#CCFF00]/15 text-[#CCFF00]'
-                  : 'bg-[#FF3B30]/15 text-[#FF3B30]'
-              }`}
-            >
-              {mode === 'interval'
-                ? phase === 'work'
-                  ? `WORK // SET ${currentSet}/${totalSets}`
-                  : `REST // NEXT SET ${Math.min(totalSets, currentSet + 1)}`
-                : 'COUNTDOWN'}
-            </span>
-          </div>
+          <span
+            className={`text-[11px] font-extrabold tracking-widest px-2 py-0.5 rounded mb-1 ${
+              phase === 'work'
+                ? 'bg-[#CCFF00]/15 text-[#CCFF00]'
+                : 'bg-[#FF3B30]/15 text-[#FF3B30]'
+            }`}
+          >
+            {mode === 'interval'
+              ? phase === 'work'
+                ? `WORK // SET ${currentSet}/${totalSets}`
+                : `REST // NEXT SET ${Math.min(totalSets, currentSet + 1)}`
+              : 'COUNTDOWN'}
+          </span>
 
           <div className="font-mono-athletic text-5xl font-black tracking-tight text-white my-1">
             {mins}:{secs}
           </div>
 
-          {/* Progress Bar */}
           <div className="w-full h-1.5 bg-[#2C2F36] rounded-full overflow-hidden mt-2">
             <div
               className={`h-full transition-all duration-300 ${
@@ -275,13 +331,14 @@ export const WorkoutTab: React.FC<WorkoutTabProps> = ({
           </div>
         </div>
 
-        {/* Presets & Controls */}
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="flex items-center gap-1.5">
+          <div className="flex flex-wrap items-center gap-1.5">
             {[
               { label: '30s', w: 30, r: 15 },
               { label: '45s', w: 45, r: 15 },
               { label: '60s', w: 60, r: 20 },
+              { label: '2分', w: 120, r: 20 },
+              { label: '3分', w: 180, r: 20 },
             ].map((p) => (
               <button
                 key={p.label}
@@ -340,13 +397,13 @@ export const WorkoutTab: React.FC<WorkoutTabProps> = ({
         </div>
       </div>
 
-      {/* Exercise Completion Cards */}
-      <div className="space-y-2.5">
+      {/* Category Filter + Exercise Completion Cards */}
+      <div className="space-y-3">
         <div className="flex items-center justify-between px-1">
           <div className="flex items-center gap-2">
             <Dumbbell className="w-4 h-4 text-[#CCFF00]" />
             <h3 className="text-sm font-extrabold text-white tracking-wide">
-              EXERCISES（種目別完了）
+              EXERCISES（腕立て・腹筋・ストレッチ）
             </h3>
           </div>
           <span className="text-xs font-mono-athletic text-[#CCFF00] font-bold">
@@ -354,10 +411,29 @@ export const WorkoutTab: React.FC<WorkoutTabProps> = ({
           </span>
         </div>
 
+        <div className="grid grid-cols-4 gap-1.5 bg-[#1C1E22] p-1 rounded-xl border border-[#2C2F36]">
+          {CATEGORY_TABS.map((cat) => (
+            <button
+              key={cat.id}
+              type="button"
+              onClick={() => setSelectedCategory(cat.id)}
+              className={`py-1.5 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
+                selectedCategory === cat.id
+                  ? 'bg-[#CCFF00] text-black'
+                  : 'text-[#8E929B] hover:text-white'
+              }`}
+            >
+              {cat.label}
+            </button>
+          ))}
+        </div>
+
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-          {EXERCISES.map((ex) => {
+          {filteredExercises.map((ex) => {
             const done = completedWorkouts.includes(ex.id);
             const isRecommended = recommendation.recommendedIds.includes(ex.id);
+            const timerLabel =
+              ex.defaultSeconds >= 60 ? `${ex.defaultSeconds / 60}分` : `${ex.defaultSeconds}s`;
             return (
               <div
                 key={ex.id}
@@ -367,34 +443,30 @@ export const WorkoutTab: React.FC<WorkoutTabProps> = ({
                     : 'bg-[#1C1E22] border-[#2C2F36]'
                 }`}
               >
-                <div className="flex items-start justify-between gap-2">
-                  <div>
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-[10px] font-bold tracking-widest text-[#8E929B]">
-                        {ex.enName}
+                <div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[10px] font-bold tracking-widest text-[#8E929B]">
+                      {ex.enName}
+                    </span>
+                    {isRecommended && (
+                      <span className="px-1.5 py-0.5 rounded bg-[#CCFF00]/15 text-[#CCFF00] text-[9px] font-extrabold">
+                        推奨
                       </span>
-                      {isRecommended && (
-                        <span className="px-1.5 py-0.5 rounded bg-[#CCFF00]/15 text-[#CCFF00] text-[9px] font-extrabold">
-                          推奨
-                        </span>
-                      )}
-                    </div>
-                    <h4 className="text-base font-extrabold text-white mt-0.5">
-                      {ex.name}
-                    </h4>
-                    <p className="text-xs text-[#8E929B] mt-0.5">
-                      {ex.target} ・ {ex.repsLabel}
-                    </p>
+                    )}
                   </div>
+                  <h4 className="text-base font-extrabold text-white mt-0.5">{ex.name}</h4>
+                  <p className="text-xs text-[#8E929B] mt-0.5">
+                    {ex.target} ・ {ex.repsLabel}
+                  </p>
                 </div>
 
                 <div className="flex items-center justify-between gap-2">
                   <button
                     type="button"
-                    onClick={() => applyPreset(ex.defaultSeconds, 15, mode)}
+                    onClick={() => applyPreset(ex.defaultSeconds, 15, 'countdown')}
                     className="px-2.5 py-1.5 rounded-lg bg-[#111214] border border-[#2C2F36] text-[11px] font-bold text-[#8E929B] hover:text-white cursor-pointer"
                   >
-                    タイマー {ex.defaultSeconds}s
+                    タイマー {timerLabel}
                   </button>
 
                   <button

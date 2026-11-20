@@ -1,12 +1,24 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { User } from '@supabase/supabase-js';
-import { Activity, Bell, Dumbbell, Home, LineChart, UserCheck, UserCircle2 } from 'lucide-react';
+import {
+  Activity,
+  Bell,
+  Dumbbell,
+  Home,
+  LineChart,
+  ListChecks,
+  Menu,
+  Scale,
+  UserCheck,
+  UserCircle2,
+} from 'lucide-react';
 import {
   AppState,
   ConditionLevel,
   ENABLE_NUTRITION,
   ShiftHours,
   TabId,
+  UserProfile,
   WeightTiming,
   WorkoutExerciseId,
 } from './types/rebuild';
@@ -46,9 +58,12 @@ import {
 import { RunnerCanvas } from './components/RunnerCanvas';
 import { DashboardTab } from './components/DashboardTab';
 import { WorkoutTab } from './components/WorkoutTab';
-import { LogTrendTab } from './components/LogTrendTab';
+import { WeightLogTab } from './components/WeightLogTab';
+import { TrendTab } from './components/TrendTab';
+import { DailyTab } from './components/DailyTab';
 import { QuickWeightModal } from './components/QuickWeightModal';
 import { AccountModal } from './components/AccountModal';
+import { SettingsModal } from './components/SettingsModal';
 
 export function App() {
   const [appState, setAppState] = useState<AppState>(() => loadAppState());
@@ -57,6 +72,7 @@ export function App() {
   const [jstClock, setJstClock] = useState<string>(() => getJstNowFormatted());
   const [debugScore, setDebugScore] = useState<number | null>(null);
   const [isWeightModalOpen, setIsWeightModalOpen] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
   // Account & Notification modal state
   const [accountModalTab, setAccountModalTab] = useState<'account' | 'notifications' | null>(null);
@@ -79,17 +95,14 @@ export function App() {
     isNotificationSupported() ? Notification.permission : 'unsupported'
   );
 
-  // Sync LocalStorage whenever state changes
   useEffect(() => {
     saveAppState(appState);
   }, [appState]);
 
-  // Register Service Worker for PWA & iOS/iPadOS notifications
   useEffect(() => {
     registerRebuildServiceWorker();
   }, []);
 
-  // Supabase Auth session & OAuth PKCE callback listener
   useEffect(() => {
     if (!supabaseClient) {
       setUser(null);
@@ -143,7 +156,6 @@ export function App() {
     };
   }, [supabaseClient]);
 
-  // Debounced cloud sync whenever appState changes while logged in
   useEffect(() => {
     if (!supabaseClient || !user) return;
     if (skipNextCloudPushRef.current) {
@@ -158,7 +170,6 @@ export function App() {
     return () => window.clearTimeout(id);
   }, [appState, supabaseClient, user]);
 
-  // Periodically check JST 05:00 day rollover & scheduled daily notification
   useEffect(() => {
     const checkRolloverAndNotify = () => {
       const nextKey = getJstRebuildDateKey();
@@ -199,8 +210,10 @@ export function App() {
   }, [notifSettings, appState.records]);
 
   const todayRecord = useMemo(
-    () => appState.records[todayKey] ?? createEmptyDailyRecord(todayKey),
-    [appState.records, todayKey]
+    () =>
+      appState.records[todayKey] ??
+      createEmptyDailyRecord(todayKey, appState.profile.defaultShiftHours ?? 'none'),
+    [appState.records, todayKey, appState.profile.defaultShiftHours]
   );
 
   const breakdown = useMemo(
@@ -222,7 +235,9 @@ export function App() {
 
   const updateTodayRecord = (updater: (prev: typeof todayRecord) => typeof todayRecord) => {
     setAppState((prev) => {
-      const current = prev.records[todayKey] ?? createEmptyDailyRecord(todayKey);
+      const current =
+        prev.records[todayKey] ??
+        createEmptyDailyRecord(todayKey, prev.profile.defaultShiftHours ?? 'none');
       return {
         ...prev,
         records: {
@@ -282,6 +297,13 @@ export function App() {
     }));
   };
 
+  const handleUpdateProfile = (nextProfile: UserProfile) => {
+    setAppState((prev) => ({
+      ...prev,
+      profile: nextProfile,
+    }));
+  };
+
   const handleResetDemo = () => {
     setDebugScore(null);
     setAppState(resetToDemoState());
@@ -314,6 +336,14 @@ export function App() {
     setSyncStatus(ok ? 'synced' : 'error');
   };
 
+  const navItems: { id: TabId; label: string; icon: typeof Home }[] = [
+    { id: 'home', label: 'ホーム', icon: Home },
+    { id: 'workout', label: 'ワークアウト', icon: Dumbbell },
+    { id: 'weight', label: '体重・ログ', icon: Scale },
+    { id: 'trend', label: '推移グラフ', icon: LineChart },
+    { id: 'daily', label: 'デイリー', icon: ListChecks },
+  ];
+
   return (
     <div className="min-h-screen bg-[#111214] text-white flex flex-col">
       {/* Top Minimal Header */}
@@ -326,7 +356,7 @@ export function App() {
             </span>
           </div>
 
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2">
             <div className="hidden sm:flex items-center gap-2 text-[11px] font-mono-athletic text-[#8E929B] mr-1">
               <span>JST {jstClock}</span>
               <span className="text-[#2C2F36]">|</span>
@@ -376,6 +406,17 @@ export function App() {
                 </>
               )}
             </button>
+
+            {/* Hamburger (☰) Settings Button */}
+            <button
+              type="button"
+              onClick={() => setIsSettingsOpen(true)}
+              className="p-1.5 rounded-lg bg-[#1C1E22] border border-[#2C2F36] text-[#8E929B] hover:text-[#CCFF00] hover:border-[#CCFF00]/50 transition-colors cursor-pointer"
+              title="設定・デバッグ"
+              aria-label="設定メニュー"
+            >
+              <Menu className="w-4 h-4" />
+            </button>
           </div>
         </div>
       </header>
@@ -419,17 +460,36 @@ export function App() {
           </div>
         )}
 
-        {activeTab === 'trend' && (
+        {activeTab === 'weight' && (
           <div className="max-w-3xl mx-auto px-4 pt-4">
-            <LogTrendTab
-              todayKey={todayKey}
+            <WeightLogTab
               todayRecord={todayRecord}
-              records={appState.records}
               profile={appState.profile}
               latestWeight={latestWeightInfo?.weight ?? null}
               onSelectShift={handleSelectShift}
               onSaveWeight={handleSaveWeight}
-              onResetDemo={handleResetDemo}
+            />
+          </div>
+        )}
+
+        {activeTab === 'trend' && (
+          <div className="max-w-3xl mx-auto px-4 pt-4">
+            <TrendTab
+              todayKey={todayKey}
+              records={appState.records}
+              profile={appState.profile}
+            />
+          </div>
+        )}
+
+        {activeTab === 'daily' && (
+          <div className="max-w-3xl mx-auto px-4 pt-4">
+            <DailyTab
+              todayRecord={todayRecord}
+              streakDays={streakDays}
+              breakdown={breakdown}
+              stageInfo={stageInfo}
+              onToggleTask={handleToggleTask}
             />
           </div>
         )}
@@ -440,41 +500,28 @@ export function App() {
         )}
       </main>
 
-      {/* 3-Tab Bottom Navigation (with iOS/iPadOS safe-area support) */}
+      {/* 5-Item Bottom Navigation (with iOS/iPadOS safe-area support) */}
       <nav className="fixed bottom-0 inset-x-0 z-40 bg-[#111214]/95 backdrop-blur-md border-t border-[#2C2F36] pb-[env(safe-area-inset-bottom)]">
-        <div className="max-w-3xl mx-auto grid grid-cols-3 h-16">
-          <button
-            type="button"
-            onClick={() => setActiveTab('home')}
-            className={`flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer ${
-              activeTab === 'home' ? 'text-[#CCFF00]' : 'text-[#8E929B] hover:text-white'
-            }`}
-          >
-            <Home className="w-5 h-5" />
-            <span className="text-[11px] font-bold tracking-wide">ホーム</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setActiveTab('workout')}
-            className={`flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer ${
-              activeTab === 'workout' ? 'text-[#CCFF00]' : 'text-[#8E929B] hover:text-white'
-            }`}
-          >
-            <Dumbbell className="w-5 h-5" />
-            <span className="text-[11px] font-bold tracking-wide">ワークアウト</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setActiveTab('trend')}
-            className={`flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer ${
-              activeTab === 'trend' ? 'text-[#CCFF00]' : 'text-[#8E929B] hover:text-white'
-            }`}
-          >
-            <LineChart className="w-5 h-5" />
-            <span className="text-[11px] font-bold tracking-wide">ライフログ＆推移</span>
-          </button>
+        <div className="max-w-3xl mx-auto grid grid-cols-5 h-16">
+          {navItems.map((item) => {
+            const Icon = item.icon;
+            const active = activeTab === item.id;
+            return (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => setActiveTab(item.id)}
+                className={`flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer ${
+                  active ? 'text-[#CCFF00]' : 'text-[#8E929B] hover:text-white'
+                }`}
+              >
+                <Icon className="w-5 h-5" />
+                <span className="text-[10px] font-bold tracking-tight whitespace-nowrap">
+                  {item.label}
+                </span>
+              </button>
+            );
+          })}
         </div>
       </nav>
 
@@ -489,6 +536,19 @@ export function App() {
           initialTiming={todayRecord.weightTiming ?? 'fasted'}
           onSave={handleSaveWeight}
           onClose={() => setIsWeightModalOpen(false)}
+        />
+      )}
+
+      {/* Settings Modal (opened from ☰ button) */}
+      {isSettingsOpen && (
+        <SettingsModal
+          profile={appState.profile}
+          realScore={breakdown.totalScore}
+          debugScore={debugScore}
+          onUpdateProfile={handleUpdateProfile}
+          onDebugScoreChange={setDebugScore}
+          onResetDemo={handleResetDemo}
+          onClose={() => setIsSettingsOpen(false)}
         />
       )}
 

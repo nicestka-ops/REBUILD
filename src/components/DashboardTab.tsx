@@ -18,6 +18,7 @@ import {
 import {
   CONDITION_OPTIONS,
   generateDailyTasks,
+  normalizeConditionLevel,
   SHIFT_OPTIONS,
 } from '../utils/recoveryEngine';
 
@@ -46,16 +47,15 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
 }) => {
   const [showConditionPicker, setShowConditionPicker] = useState(false);
 
-  const isConditionMissing = todayRecord.conditionLevel === null;
+  const normLevel = normalizeConditionLevel(todayRecord.conditionLevel);
+  const isConditionMissing = normLevel === null;
   const tasks = generateDailyTasks(
     todayRecord.shiftHours,
-    todayRecord.conditionLevel,
+    normLevel,
     todayRecord.rawWeight !== null
   );
 
-  const activeCondition = CONDITION_OPTIONS.find(
-    (c) => c.level === todayRecord.conditionLevel
-  );
+  const activeCondition = CONDITION_OPTIONS.find((c) => c.level === normLevel);
 
   const weightDiffFromTarget =
     latestWeight !== null
@@ -64,7 +64,7 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
 
   return (
     <div className="space-y-4">
-      {/* JST 05:00 Unanswered Condition Alert Banner */}
+      {/* JST 05:00 Unanswered Condition Alert Banner (3-level one-tap) */}
       {isConditionMissing && (
         <div className="rounded-2xl bg-[#1C1E22] border-2 border-[#FF3B30] p-4 shadow-[0_0_24px_rgba(255,59,48,0.18)]">
           <div className="flex items-start gap-2.5 mb-3">
@@ -74,24 +74,24 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
                 今日の体調を記録してください
               </p>
               <p className="text-xs text-[#8E929B] mt-0.5">
-                JST 05:00 リセット済み・ワンタップでリカバリースコアに反映されます
+                JST 05:00 リセット済み・3段階からワンタップで累積スコアに反映
               </p>
             </div>
           </div>
 
-          <div className="grid grid-cols-5 gap-1.5">
+          <div className="grid grid-cols-3 gap-2">
             {CONDITION_OPTIONS.map((opt) => (
               <button
                 key={opt.level}
                 type="button"
                 onClick={() => onSelectCondition(opt.level)}
-                className="flex flex-col items-center justify-center py-2.5 px-1 rounded-xl bg-[#111214] border border-[#2C2F36] hover:border-[#CCFF00] hover:bg-[#CCFF00]/10 transition-all cursor-pointer"
+                className="flex flex-col items-center justify-center py-3 px-2 rounded-xl bg-[#111214] border border-[#2C2F36] hover:border-[#CCFF00] hover:bg-[#CCFF00]/10 transition-all cursor-pointer"
               >
-                <span className="font-mono-athletic text-xs font-extrabold text-white">
-                  {opt.shortLabel}
+                <span className="text-xs font-extrabold text-white text-center">
+                  {opt.label}
                 </span>
-                <span className="text-[10px] text-[#8E929B] mt-0.5">
-                  +{opt.points}pt
+                <span className="text-[10px] text-[#8E929B] mt-1">
+                  {opt.description}
                 </span>
               </button>
             ))}
@@ -101,7 +101,6 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
 
       {/* 3 Metric Cards: WEIGHT / STRENGTH / CONDITION */}
       <div className="grid grid-cols-3 gap-2.5">
-        {/* WEIGHT Card */}
         <button
           type="button"
           onClick={onOpenWeightModal}
@@ -124,7 +123,6 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
           </p>
         </button>
 
-        {/* STRENGTH Card */}
         <button
           type="button"
           onClick={onGoToWorkout}
@@ -145,7 +143,6 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
           </p>
         </button>
 
-        {/* CONDITION Card */}
         <button
           type="button"
           onClick={() => setShowConditionPicker((v) => !v)}
@@ -165,16 +162,16 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
               }`}
             />
           </div>
-          <div className="font-mono-athletic text-xl font-black text-white">
+          <div className="text-lg font-black text-white truncate">
             {activeCondition ? activeCondition.shortLabel : '未回答'}
           </div>
           <p className="text-[11px] text-[#8E929B] mt-1 truncate">
-            {activeCondition ? `${activeCondition.description} (+${activeCondition.points}pt)` : 'タップで回答'}
+            {activeCondition ? activeCondition.description : 'タップで回答'}
           </p>
         </button>
       </div>
 
-      {/* Inline Condition Re-picker when CONDITION card is tapped */}
+      {/* Inline 3-level Condition Re-picker */}
       {showConditionPicker && !isConditionMissing && (
         <div className="rounded-2xl bg-[#1C1E22] border border-[#2C2F36] p-3.5 space-y-2.5">
           <div className="flex items-center justify-between">
@@ -187,9 +184,9 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
               閉じる
             </button>
           </div>
-          <div className="grid grid-cols-5 gap-1.5">
+          <div className="grid grid-cols-3 gap-2">
             {CONDITION_OPTIONS.map((opt) => {
-              const selected = todayRecord.conditionLevel === opt.level;
+              const selected = normLevel === opt.level;
               return (
                 <button
                   key={opt.level}
@@ -198,15 +195,15 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
                     onSelectCondition(opt.level);
                     setShowConditionPicker(false);
                   }}
-                  className={`py-2 px-1 rounded-xl border text-center transition-all cursor-pointer ${
+                  className={`py-2.5 px-2 rounded-xl border text-center transition-all cursor-pointer ${
                     selected
                       ? 'bg-[#CCFF00] border-[#CCFF00] text-black font-extrabold'
                       : 'bg-[#111214] border-[#2C2F36] text-white hover:border-[#CCFF00]/50'
                   }`}
                 >
-                  <div className="font-mono-athletic text-xs font-bold">{opt.shortLabel}</div>
-                  <div className={`text-[10px] ${selected ? 'text-black/75' : 'text-[#8E929B]'}`}>
-                    {opt.points}pt
+                  <div className="text-xs font-bold">{opt.label}</div>
+                  <div className={`text-[10px] mt-0.5 ${selected ? 'text-black/75' : 'text-[#8E929B]'}`}>
+                    {opt.description}
                   </div>
                 </button>
               );
@@ -225,7 +222,6 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
             </h2>
           </div>
 
-          {/* Shift quick pills */}
           <div className="flex items-center gap-1 bg-[#111214] p-1 rounded-lg border border-[#2C2F36]">
             {SHIFT_OPTIONS.map((s) => {
               const active = todayRecord.shiftHours === s.id;

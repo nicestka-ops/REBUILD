@@ -5,11 +5,20 @@ export type WeightTiming = 'fasted' | 'normal' | 'post_meal';
 
 export type ShiftHours = 'none' | 'short' | 'medium' | 'long';
 
-export type ConditionLevel = 1 | 2 | 3 | 4 | 5;
+// 3-level condition: 1 = 不調・疲れ気味, 2 = 普通, 3 = 好調
+export type ConditionLevel = 1 | 2 | 3;
 
-export type WorkoutExerciseId = 'squat' | 'pushup' | 'plank' | 'stretch';
+export type WorkoutExerciseId =
+  | 'pushup_normal'
+  | 'pushup_knee'
+  | 'abs_crunch'
+  | 'abs_legraise'
+  | 'abs_plank'
+  | 'stretch_shift'
+  | 'stretch_sleep'
+  | 'stretch_morning';
 
-export type TabId = 'home' | 'workout' | 'trend';
+export type TabId = 'home' | 'workout' | 'weight' | 'trend' | 'daily';
 
 export interface DailyTask {
   id: string;
@@ -35,6 +44,7 @@ export interface DailyRecord {
 export interface UserProfile {
   baselineWeight: number;
   targetWeight: number;
+  defaultShiftHours?: ShiftHours;
 }
 
 export interface AppState {
@@ -48,7 +58,7 @@ export interface ScoreBreakdown {
   conditionScore: number; // 0..40
   weightScore: number; // 0..30
   strengthScore: number; // 0..30
-  totalScore: number; // 0..100
+  totalScore: number; // 0..100 (cumulative, capped daily delta ±8pt)
 }
 
 export interface StageInfo {

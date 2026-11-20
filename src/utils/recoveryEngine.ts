@@ -17,11 +17,9 @@ export const CONDITION_OPTIONS: {
   points: number;
   description: string;
 }[] = [
-  { level: 1, label: 'Lv.1 限界・激疲れ', shortLabel: 'Lv.1', points: 0, description: '休息最優先' },
-  { level: 2, label: 'Lv.2 かなり疲労', shortLabel: 'Lv.2', points: 10, description: '軽めケア' },
-  { level: 3, label: 'Lv.3 普通', shortLabel: 'Lv.3', points: 20, description: '安定維持' },
-  { level: 4, label: 'Lv.4 良好', shortLabel: 'Lv.4', points: 30, description: '筋トレOK' },
-  { level: 5, label: 'Lv.5 絶好調', shortLabel: 'Lv.5', points: 40, description: '全力ビルド' },
+  { level: 1, label: '不調・疲れ気味', shortLabel: '不調', points: 10, description: '回復優先' },
+  { level: 2, label: '普通', shortLabel: '普通', points: 25, description: '安定維持' },
+  { level: 3, label: '好調', shortLabel: '好調', points: 40, description: '積極ビルド' },
 ];
 
 export const WEIGHT_TIMING_OPTIONS: {
@@ -46,15 +44,25 @@ export const SHIFT_OPTIONS: {
   { id: 'long', label: '8h〜', loadLabel: '高負荷' },
 ];
 
+export function normalizeConditionLevel(raw: number | null | undefined): ConditionLevel | null {
+  if (raw === null || raw === undefined) return null;
+  if (raw <= 1) return 1;
+  if (raw === 2) return 2;
+  return 3;
+}
+
 export function computeNormalizedWeight(rawWeight: number, timing: WeightTiming): number {
   const option = WEIGHT_TIMING_OPTIONS.find((o) => o.id === timing);
   const offset = option ? option.offset : 0;
   return Math.round((rawWeight + offset) * 10) / 10;
 }
 
-export function getConditionPoints(level: ConditionLevel | null): number {
-  if (!level) return 0;
-  return (level - 1) * 10;
+export function getConditionPoints(level: ConditionLevel | number | null): number {
+  const norm = normalizeConditionLevel(level);
+  if (norm === 1) return 10;
+  if (norm === 2) return 25;
+  if (norm === 3) return 40;
+  return 0;
 }
 
 export function getLatestNormalizedWeight(
@@ -102,56 +110,69 @@ function computeSingleDayScore(
   };
 }
 
+function computeTargetCumulativeScore(
+  records: Record<string, DailyRecord>,
+  profile: UserProfile,
+  dk: string
+): number {
+  const todayParts = computeSingleDayScore(records, profile, dk);
+  const windowKeys = getPastDateKeys(dk, 4).reverse();
+  const weights = [0.4, 0.3, 0.2, 0.1];
+  let weightedSum = 0;
+  let weightTotal = 0;
+
+  windowKeys.forEach((k, idx) => {
+    const hasLog =
+      k === dk ||
+      Boolean(
+        records[k] &&
+          (records[k].conditionLevel !== null ||
+            records[k].normalizedWeight !== null ||
+            records[k].completedWorkouts.length > 0)
+      );
+    if (!hasLog) return;
+    const dayScore = computeSingleDayScore(records, profile, k).dailyTotal;
+    weightedSum += dayScore * weights[idx];
+    weightTotal += weights[idx];
+  });
+
+  const rollingAvg = weightTotal > 0 ? weightedSum / weightTotal : todayParts.dailyTotal;
+  const streakDays = calculateStreakDays(records, dk);
+  const streakBonus = Math.min(12, streakDays * 1.2);
+
+  let target = Math.round(rollingAvg * 0.88 + streakBonus);
+  if (streakDays < 5) {
+    target = Math.min(84, target);
+  } else if (streakDays < 10) {
+    target = Math.min(93, target);
+  }
+  return Math.max(0, Math.min(100, target));
+}
+
 /**
- * Cumulative Recovery Score (0..100):
- * - Smooths over the past 4 days (rolling weighted average) so a single day's input
- *   never causes wild jumps or instant Stage 10 (Goku) spikes.
- * - Rewards consecutive streak days, and gates Stage 9 (CR7: 90+) and Stage 10 (Goku: 96+)
- *   behind sustained multi-day streaks (5+ days for CR7, 10+ days for Goku).
+ * Cumulative Recovery Score (0..100) with Daily Delta Cap (±8pt/day):
+ * Iterates over the past 14 days so each day's score can change by at most ±8pt
+ * (roughly ±1-2 stages/day), preventing single-day spikes to Stage 10 (Goku).
  */
 export function calculateScoreBreakdown(
   records: Record<string, DailyRecord>,
   profile: UserProfile,
   dateKey: string
 ): ScoreBreakdown {
-  const todayParts = computeSingleDayScore(records, profile, dateKey);
+  const MAX_DAILY_DELTA = 8;
+  const horizonKeys = getPastDateKeys(dateKey, 14);
 
-  // Rolling 4-day weighted average (today + past 3 days)
-  const windowKeys = getPastDateKeys(dateKey, 4).reverse(); // [today, -1, -2, -3]
-  const weights = [0.4, 0.3, 0.2, 0.1];
-  let weightedSum = 0;
-  let weightTotal = 0;
-
-  windowKeys.forEach((dk, idx) => {
-    const hasLog =
-      dk === dateKey ||
-      Boolean(
-        records[dk] &&
-          (records[dk].conditionLevel !== null ||
-            records[dk].normalizedWeight !== null ||
-            records[dk].completedWorkouts.length > 0)
-      );
-    if (!hasLog) return;
-    const dayScore = computeSingleDayScore(records, profile, dk).dailyTotal;
-    weightedSum += dayScore * weights[idx];
-    weightTotal += weights[idx];
-  });
-
-  const rollingAvg = weightTotal > 0 ? weightedSum / weightTotal : todayParts.dailyTotal;
-
-  // Streak bonus (up to +12pt) & anti-spike gates for Stage 9 (CR7) and Stage 10 (Goku)
-  const streakDays = calculateStreakDays(records, dateKey);
-  const streakBonus = Math.min(12, streakDays * 1.2);
-
-  let cumulative = Math.round(rollingAvg * 0.88 + streakBonus);
-
-  if (streakDays < 5) {
-    cumulative = Math.min(84, cumulative); // Cap at Stage 8 until 5-day streak
-  } else if (streakDays < 10) {
-    cumulative = Math.min(93, cumulative); // Cap at Stage 9 until 10-day streak
+  let runningScore = computeTargetCumulativeScore(records, profile, horizonKeys[0]);
+  for (let i = 1; i < horizonKeys.length; i++) {
+    const dk = horizonKeys[i];
+    const target = computeTargetCumulativeScore(records, profile, dk);
+    const delta = Math.max(-MAX_DAILY_DELTA, Math.min(MAX_DAILY_DELTA, target - runningScore));
+    runningScore = Math.max(0, Math.min(100, Math.round(runningScore + delta)));
   }
 
-  // Also compute 7-day strength display for the STRENGTH card (0..30)
+  const todayParts = computeSingleDayScore(records, profile, dateKey);
+
+  // 7-day strength display for STRENGTH card (0..30)
   const past7 = getPastDateKeys(dateKey, 7);
   let workoutUnits = 0;
   for (const k of past7) {
@@ -165,7 +186,7 @@ export function calculateScoreBreakdown(
     conditionScore: todayParts.conditionScore,
     weightScore: todayParts.weightScore,
     strengthScore: displayStrength,
-    totalScore: Math.max(0, Math.min(100, cumulative)),
+    totalScore: runningScore,
   };
 }
 
@@ -187,7 +208,7 @@ export function getStageFromScore(score: number): StageInfo {
       code: 'STAGE 01',
       label: 'DRAG // 重度疲労',
       description: '猫背で足を引きずる状態。無理な負荷は避け、回復に専念。',
-      accentColor: '#CCFF00',
+      accentColor: '#99CC00',
       isDanger: false,
     };
   }
@@ -197,7 +218,7 @@ export function getStageFromScore(score: number): StageInfo {
       code: 'STAGE 02',
       label: 'SLUMP // 疲労蓄積',
       description: '肩を落としてトボトボ歩く状態。栄養とストレッチで底上げを。',
-      accentColor: '#CCFF00',
+      accentColor: '#99CC00',
       isDanger: false,
     };
   }
@@ -207,7 +228,7 @@ export function getStageFromScore(score: number): StageInfo {
       code: 'STAGE 03',
       label: 'STEADY WALK // 回復初期',
       description: '背筋が伸びて普通に歩ける状態。基礎リズムが戻り始めています。',
-      accentColor: '#CCFF00',
+      accentColor: '#99CC00',
       isDanger: false,
     };
   }
@@ -246,8 +267,8 @@ export function getStageFromScore(score: number): StageInfo {
       stage: 7,
       code: 'STAGE 07',
       label: 'POWER RUN // 全力スプリント',
-      description: '厚みのある筋肉質な体格。約30度前傾したハイペースラン。',
-      accentColor: '#CCFF00',
+      description: '厚みのある筋肉質な体格。シアン×ボルトの覚醒スプリント。',
+      accentColor: '#00F0FF',
       isDanger: false,
     };
   }
@@ -257,7 +278,7 @@ export function getStageFromScore(score: number): StageInfo {
       code: 'STAGE 08',
       label: 'FULL SPRINT // 残像スプリント',
       description: '屈強な体格で大きくストライドを広げ、残像を伴って全力疾走。',
-      accentColor: '#CCFF00',
+      accentColor: '#00F0FF',
       isDanger: false,
     };
   }
@@ -266,8 +287,8 @@ export function getStageFromScore(score: number): StageInfo {
       stage: 9,
       code: 'STAGE 09',
       label: 'CR7 MODE // 爆発スプリント',
-      description: '広い肩幅・強靭な大腿部・短髪アップバング。約42度前傾の超高速フォーム。',
-      accentColor: '#CCFF00',
+      description: '広い肩幅・強靭な大腿部・短髪アップバング。ゴールド×ライムの爆発フォーム。',
+      accentColor: '#FFD60A',
       isDanger: false,
     };
   }
@@ -275,8 +296,8 @@ export function getStageFromScore(score: number): StageInfo {
     stage: 10,
     code: 'STAGE 10',
     label: 'GOKU MODE // 限界突破',
-    description: '逆立つ髪と屈強な体格で地面スレスレを疾走。白い衝撃波オーラと集中線が噴出。',
-    accentColor: '#CCFF00',
+    description: '逆立つ髪と屈強な体格で地面スレスレを疾走。オーラブルーの限界突破。',
+    accentColor: '#00D4FF',
     isDanger: false,
   };
 }
@@ -285,7 +306,6 @@ export function calculateStreakDays(records: Record<string, DailyRecord>, todayK
   let streak = 0;
   let cursor = todayKey;
 
-  // If today is not yet answered, count streak up to yesterday if yesterday was answered
   const hasActivity = (r?: DailyRecord) =>
     Boolean(r && (r.conditionLevel !== null || r.rawWeight !== null || r.completedWorkouts.length > 0));
 
@@ -302,18 +322,19 @@ export function calculateStreakDays(records: Record<string, DailyRecord>, todayK
 
 export function generateDailyTasks(
   shiftHours: ShiftHours,
-  conditionLevel: ConditionLevel | null,
+  conditionLevel: ConditionLevel | number | null,
   hasWeightToday: boolean
 ): DailyTask[] {
-  const isFatigued = (conditionLevel !== null && conditionLevel <= 2) || shiftHours === 'long';
-  const isEnergetic = conditionLevel !== null && conditionLevel >= 4 && shiftHours !== 'long';
+  const norm = normalizeConditionLevel(conditionLevel);
+  const isFatigued = norm === 1 || shiftHours === 'long';
+  const isEnergetic = norm === 3 && shiftHours !== 'long';
 
   const tasks: DailyTask[] = [];
 
   if (isFatigued) {
     tasks.push({
       id: 'task_stretch',
-      title: 'リカバリー・ストレッチ（5〜10分）',
+      title: 'バイト後／就寝前リラックスストレッチ',
       subtitle: shiftHours === 'long' ? '長時間シフトの筋疲労を抜く' : '副交感神経を優位にする',
       category: 'recovery',
     });
@@ -337,26 +358,26 @@ export function generateDailyTasks(
   if (isEnergetic) {
     tasks.push({
       id: 'task_strength',
-      title: '自重筋トレ（スクワット・腕立て）',
-      subtitle: '好調な日に筋肥大刺激を入れてStageアップ',
+      title: '腕立て伏せ＆腹筋（クランチ／プランク）',
+      subtitle: '好調な日に上半身・体幹へ刺激を入れる',
       category: 'strength',
     });
     tasks.push({
       id: 'task_weight',
       title: '体重ログ＆ベース体重チェック',
-      subtitle: '目標体重に向けた増量カーブを確認',
+      subtitle: '目標体重に向けた回復カーブを確認',
       category: 'weight',
     });
     tasks.push({
       id: 'task_cooldown',
-      title: 'トレーニング後のケア＆水分補給',
+      title: '就寝前ストレッチ＆水分補給',
       subtitle: '明日に疲労を残さないリカバリー',
       category: 'recovery',
     });
     return tasks.slice(0, 3);
   }
 
-  // Balanced / Neutral day (Lv.3 or unanswered)
+  // Neutral day (普通 or unanswered)
   tasks.push({
     id: 'task_weight',
     title: '毎日の体重記録（食前/食後タグ選択）',
@@ -365,13 +386,13 @@ export function generateDailyTasks(
   });
   tasks.push({
     id: 'task_light_move',
-    title: shiftHours === 'medium' ? '軽めの体幹プランク＆ストレッチ' : '自重スクワット 15回×2セット',
+    title: shiftHours === 'medium' ? '膝つき腕立て＆プランク（30秒）' : '体幹プランク＆ストレッチ',
     subtitle: '無理のない範囲で筋力ベースを維持',
     category: 'strength',
   });
   tasks.push({
     id: 'task_sleep',
-    title: '就寝前スマホオフ＆リカバリー睡眠',
+    title: '就寝前リラックスストレッチ＆睡眠',
     subtitle: '翌朝JST 05:00のリセットに向けて回復',
     category: 'sleep',
   });
