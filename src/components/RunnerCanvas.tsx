@@ -198,6 +198,13 @@ export const RunnerCanvas: React.FC<RunnerCanvasProps> = ({
                 muted
                 playsInline
                 preload="auto"
+                onTimeUpdate={(e) => {
+                  const vid = e.currentTarget;
+                  if (vid.duration && vid.duration - vid.currentTime < 0.08) {
+                    vid.currentTime = 0.01;
+                    vid.play().catch(() => {});
+                  }
+                }}
                 className={`absolute inset-0 w-full h-full object-contain transition-opacity duration-150 ${
                   isActive ? 'opacity-100' : 'opacity-0 pointer-events-none'
                 }`}

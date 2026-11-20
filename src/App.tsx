@@ -287,6 +287,20 @@ export function App() {
     });
   };
 
+  const handleSaveRunningDistance = (km: number) => {
+    updateTodayRecord((rec) => {
+      const nextWorkouts = [...rec.completedWorkouts];
+      if (km > 0 && !nextWorkouts.includes('running_jog') && !nextWorkouts.includes('running_goal')) {
+        nextWorkouts.push('running_jog');
+      }
+      return {
+        ...rec,
+        runningDistanceKm: km,
+        completedWorkouts: nextWorkouts,
+      };
+    });
+  };
+
   const handleSaveWeight = (rawWeight: number, timing: WeightTiming) => {
     const normalizedWeight = computeNormalizedWeight(rawWeight, timing);
     updateTodayRecord((rec) => ({
@@ -455,7 +469,9 @@ export function App() {
               conditionLevel={todayRecord.conditionLevel}
               shiftHours={todayRecord.shiftHours}
               completedWorkouts={todayRecord.completedWorkouts}
+              runningDistanceKm={todayRecord.runningDistanceKm}
               onToggleWorkout={handleToggleWorkout}
+              onSaveRunningDistance={handleSaveRunningDistance}
             />
           </div>
         )}

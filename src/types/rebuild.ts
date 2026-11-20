@@ -16,7 +16,10 @@ export type WorkoutExerciseId =
   | 'abs_plank'
   | 'stretch_shift'
   | 'stretch_sleep'
-  | 'stretch_morning';
+  | 'stretch_morning'
+  | 'stretch_shoulder'
+  | 'running_jog'
+  | 'running_goal';
 
 export type TabId = 'home' | 'workout' | 'weight' | 'trend' | 'daily';
 
@@ -35,6 +38,7 @@ export interface DailyRecord {
   weightTiming: WeightTiming | null;
   normalizedWeight: number | null;
   shiftHours: ShiftHours;
+  runningDistanceKm?: number | null;
   completedTasks: string[];
   completedWorkouts: WorkoutExerciseId[];
   // Reserved field for future nutrition feature
@@ -55,10 +59,10 @@ export interface AppState {
 }
 
 export interface ScoreBreakdown {
-  conditionScore: number; // 0..40
-  weightScore: number; // 0..30
-  strengthScore: number; // 0..30
-  totalScore: number; // 0..100 (cumulative, capped daily delta ±8pt)
+  conditionScore: number;
+  weightScore: number;
+  strengthScore: number;
+  totalScore: number; // 0..100 (cumulative, capped daily delta ±8pt, no fatigue penalty)
 }
 
 export interface StageInfo {

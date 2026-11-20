@@ -16,6 +16,7 @@ export function createEmptyDailyRecord(
     weightTiming: null,
     normalizedWeight: null,
     shiftHours: defaultShift,
+    runningDistanceKm: null,
     completedTasks: [],
     completedWorkouts: [],
     nutritionReserved: null,
@@ -32,18 +33,19 @@ function createInitialSeedState(): AppState {
     rawWeight: number;
     timing: WeightTiming;
     shift: ShiftHours;
+    runKm: number | null;
     workouts: WorkoutExerciseId[];
   }[] = [
-    { daysAgo: 10, condition: 1, rawWeight: 54.4, timing: 'normal', shift: 'long', workouts: ['stretch_shift'] },
-    { daysAgo: 9, condition: 1, rawWeight: 54.3, timing: 'fasted', shift: 'medium', workouts: ['stretch_sleep'] },
-    { daysAgo: 8, condition: 2, rawWeight: 55.1, timing: 'post_meal', shift: 'long', workouts: ['stretch_shift', 'abs_plank'] },
-    { daysAgo: 7, condition: 2, rawWeight: 54.7, timing: 'fasted', shift: 'short', workouts: ['pushup_knee', 'stretch_morning'] },
-    { daysAgo: 6, condition: 2, rawWeight: 55.3, timing: 'normal', shift: 'none', workouts: ['pushup_normal', 'abs_crunch'] },
-    { daysAgo: 5, condition: 2, rawWeight: 55.8, timing: 'post_meal', shift: 'medium', workouts: ['abs_plank', 'stretch_sleep'] },
-    { daysAgo: 4, condition: 3, rawWeight: 55.4, timing: 'fasted', shift: 'short', workouts: ['pushup_normal', 'abs_crunch', 'abs_plank'] },
-    { daysAgo: 3, condition: 2, rawWeight: 56.0, timing: 'normal', shift: 'long', workouts: ['stretch_shift'] },
-    { daysAgo: 2, condition: 3, rawWeight: 55.9, timing: 'fasted', shift: 'none', workouts: ['pushup_normal', 'abs_legraise', 'abs_plank'] },
-    { daysAgo: 1, condition: 3, rawWeight: 56.7, timing: 'post_meal', shift: 'short', workouts: ['pushup_normal', 'abs_crunch', 'stretch_sleep'] },
+    { daysAgo: 10, condition: 1, rawWeight: 54.4, timing: 'normal', shift: 'long', runKm: null, workouts: ['stretch_shift'] },
+    { daysAgo: 9, condition: 1, rawWeight: 54.3, timing: 'fasted', shift: 'medium', runKm: null, workouts: ['stretch_sleep'] },
+    { daysAgo: 8, condition: 2, rawWeight: 55.1, timing: 'post_meal', shift: 'long', runKm: null, workouts: ['stretch_shift', 'abs_plank'] },
+    { daysAgo: 7, condition: 2, rawWeight: 54.7, timing: 'fasted', shift: 'short', runKm: 1.5, workouts: ['pushup_knee', 'running_jog'] },
+    { daysAgo: 6, condition: 2, rawWeight: 55.3, timing: 'normal', shift: 'none', runKm: 2.0, workouts: ['pushup_normal', 'abs_crunch', 'running_jog'] },
+    { daysAgo: 5, condition: 2, rawWeight: 55.8, timing: 'post_meal', shift: 'medium', runKm: null, workouts: ['abs_plank', 'stretch_sleep'] },
+    { daysAgo: 4, condition: 3, rawWeight: 55.4, timing: 'fasted', shift: 'short', runKm: 3.0, workouts: ['pushup_normal', 'abs_crunch', 'running_goal'] },
+    { daysAgo: 3, condition: 2, rawWeight: 56.0, timing: 'normal', shift: 'long', runKm: null, workouts: ['stretch_shift'] },
+    { daysAgo: 2, condition: 3, rawWeight: 55.9, timing: 'fasted', shift: 'none', runKm: 3.5, workouts: ['pushup_normal', 'abs_legraise', 'running_goal'] },
+    { daysAgo: 1, condition: 3, rawWeight: 56.7, timing: 'post_meal', shift: 'short', runKm: 2.5, workouts: ['pushup_normal', 'abs_crunch', 'running_jog'] },
   ];
 
   for (const item of seedPlan) {
@@ -56,6 +58,7 @@ function createInitialSeedState(): AppState {
       weightTiming: item.timing,
       normalizedWeight: computeNormalizedWeight(item.rawWeight, item.timing),
       shiftHours: item.shift,
+      runningDistanceKm: item.runKm,
       completedTasks: ['task_weight', 'task_sleep'],
       completedWorkouts: item.workouts,
       nutritionReserved: null,

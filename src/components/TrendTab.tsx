@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { TrendingUp } from 'lucide-react';
+import { Footprints, TrendingUp } from 'lucide-react';
 import { DailyRecord, UserProfile } from '../types/rebuild';
 import { formatShortDate, getPastDateKeys } from '../utils/dateJst';
 import { calculateScoreBreakdown } from '../utils/recoveryEngine';
@@ -29,9 +29,33 @@ export const TrendTab: React.FC<TrendTabProps> = ({
         rawWeight: rec?.rawWeight ?? null,
         normalizedWeight: rec?.normalizedWeight ?? null,
         score,
+        runningDistanceKm: rec?.runningDistanceKm ?? 0,
       };
     });
   }, [range, todayKey, records, profile]);
+
+  const periodTotalKm = useMemo(
+    () =>
+      Number(
+        chartData.reduce((acc, d) => acc + (d.runningDistanceKm || 0), 0).toFixed(1)
+      ),
+    [chartData]
+  );
+
+  const allTimeTotalKm = useMemo(
+    () =>
+      Number(
+        Object.values(records)
+          .reduce((acc, rec) => acc + (rec.runningDistanceKm ?? 0), 0)
+          .toFixed(1)
+      ),
+    [records]
+  );
+
+  const maxRunKm = useMemo(
+    () => Math.max(5, ...chartData.map((d) => d.runningDistanceKm || 0)),
+    [chartData]
+  );
 
   const svgW = 560;
   const svgH = 230;
@@ -245,6 +269,66 @@ export const TrendTab: React.FC<TrendTabProps> = ({
           {' / '}
           開始基準: <span className="font-mono-athletic text-white font-bold">{profile.baselineWeight.toFixed(1)}kg</span>
         </p>
+      </div>
+
+      {/* 累計走行距離 & 日別の走行距離 */}
+      <div className="rounded-2xl bg-[#1C1E22] border border-[#2C2F36] p-4 space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <Footprints className="w-4 h-4 text-[#CCFF00]" />
+            <h3 className="text-sm font-extrabold text-white tracking-wide">
+              RUNNING DISTANCE
+            </h3>
+          </div>
+          <div className="flex items-center gap-3 text-xs">
+            <span className="text-[#8E929B]">
+              {range === 'week' ? '7日間' : '30日間'}:{' '}
+              <strong className="font-mono-athletic text-white">{periodTotalKm.toFixed(1)} km</strong>
+            </span>
+            <span className="px-2 py-0.5 rounded bg-[#CCFF00]/15 border border-[#CCFF00]/30 text-[#CCFF00] font-mono-athletic font-bold">
+              累計 {allTimeTotalKm.toFixed(1)} km
+            </span>
+          </div>
+        </div>
+
+        <div className="bg-[#111214] rounded-xl p-3 border border-[#2C2F36]">
+          <div className="flex items-end gap-1.5 h-24">
+            {chartData.map((d) => {
+              const km = d.runningDistanceKm || 0;
+              const pct = km > 0 ? Math.max(8, Math.round((km / maxRunKm) * 100)) : 0;
+              return (
+                <div key={d.dateKey} className="flex-1 flex flex-col items-center justify-end h-full min-w-0">
+                  {km > 0 && range === 'week' && (
+                    <span className="text-[10px] font-mono-athletic text-[#CCFF00] mb-1">
+                      {km.toFixed(1)}
+                    </span>
+                  )}
+                  <div
+                    className={`w-full rounded-t transition-all ${
+                      km > 0 ? 'bg-[#CCFF00]' : 'bg-[#252830] h-[2px]'
+                    }`}
+                    style={km > 0 ? { height: `${pct}%` } : undefined}
+                    title={`${d.label}: ${km.toFixed(1)} km`}
+                  />
+                </div>
+              );
+            })}
+          </div>
+          <div className="flex items-center gap-1.5 mt-1.5">
+            {chartData.map((d, i) => {
+              const showLabel =
+                range === 'week' || i === 0 || i === chartData.length - 1 || i % 5 === 0;
+              return (
+                <div
+                  key={d.dateKey}
+                  className="flex-1 text-center text-[9px] font-mono-athletic text-[#8E929B] truncate"
+                >
+                  {showLabel ? d.label : ''}
+                </div>
+              );
+            })}
+          </div>
+        </div>
       </div>
     </div>
   );

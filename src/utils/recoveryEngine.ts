@@ -17,9 +17,9 @@ export const CONDITION_OPTIONS: {
   points: number;
   description: string;
 }[] = [
-  { level: 1, label: '不調・疲れ気味', shortLabel: '不調', points: 10, description: '回復優先' },
-  { level: 2, label: '普通', shortLabel: '普通', points: 25, description: '安定維持' },
-  { level: 3, label: '好調', shortLabel: '好調', points: 40, description: '積極ビルド' },
+  { level: 1, label: '不調・疲れ気味', shortLabel: '不調', points: 15, description: 'リカバリー・ケア' },
+  { level: 2, label: '普通', shortLabel: '普通', points: 20, description: 'バランス維持' },
+  { level: 3, label: '好調', shortLabel: '好調', points: 25, description: '強化・ランニング' },
 ];
 
 export const WEIGHT_TIMING_OPTIONS: {
@@ -59,10 +59,21 @@ export function computeNormalizedWeight(rawWeight: number, timing: WeightTiming)
 
 export function getConditionPoints(level: ConditionLevel | number | null): number {
   const norm = normalizeConditionLevel(level);
-  if (norm === 1) return 10;
-  if (norm === 2) return 25;
-  if (norm === 3) return 40;
+  if (norm === 1) return 15;
+  if (norm === 2) return 20;
+  if (norm === 3) return 25;
   return 0;
+}
+
+export function hasAnyDailyAction(rec?: DailyRecord): boolean {
+  if (!rec) return false;
+  return (
+    rec.conditionLevel !== null ||
+    rec.rawWeight !== null ||
+    rec.completedWorkouts.length > 0 ||
+    rec.completedTasks.length > 0 ||
+    (rec.runningDistanceKm ?? 0) > 0
+  );
 }
 
 export function getLatestNormalizedWeight(
@@ -78,81 +89,47 @@ export function getLatestNormalizedWeight(
   return { weight: records[k].normalizedWeight as number, dateKey: k };
 }
 
-function computeSingleDayScore(
+function computePositiveDayScore(
   records: Record<string, DailyRecord>,
   profile: UserProfile,
   dk: string
 ): { conditionScore: number; weightScore: number; strengthScore: number; dailyTotal: number } {
   const rec = records[dk];
 
-  // 1. Condition (0..40)
+  // 1. Condition check-in reward (0..25, NEVER negative for fatigue)
   const conditionScore = getConditionPoints(rec?.conditionLevel ?? null);
 
-  // 2. Normalized Weight Progress (0..30)
+  // 2. Normalized Weight Progress (0..25)
   const latestWeightInfo = getLatestNormalizedWeight(records, dk);
   let weightScore = 10;
   if (latestWeightInfo) {
     const span = Math.max(1, profile.targetWeight - profile.baselineWeight);
     const progress = (latestWeightInfo.weight - profile.baselineWeight) / span;
-    weightScore = Math.round(Math.max(0, Math.min(1, progress)) * 30);
+    weightScore = Math.round(Math.max(0, Math.min(1, progress)) * 25);
   }
 
-  // 3. Daily Strength & Task Consistency (0..30)
+  // 3. Workouts, Running Distance (km) & Daily Tasks (0..35)
   const workouts = rec?.completedWorkouts.length ?? 0;
   const tasks = rec?.completedTasks.length ?? 0;
-  const strengthScore = Math.round(Math.min(30, workouts * 7 + tasks * 3.5));
+  const runKm = rec?.runningDistanceKm ?? 0;
+  const runPts = Math.min(12, runKm * 3);
+  const strengthScore = Math.round(Math.min(35, workouts * 6.5 + tasks * 3.5 + runPts));
 
   return {
     conditionScore,
     weightScore,
     strengthScore,
-    dailyTotal: Math.max(0, Math.min(100, conditionScore + weightScore + strengthScore)),
+    dailyTotal: Math.max(0, Math.min(85, conditionScore + weightScore + strengthScore)),
   };
 }
 
-function computeTargetCumulativeScore(
-  records: Record<string, DailyRecord>,
-  profile: UserProfile,
-  dk: string
-): number {
-  const todayParts = computeSingleDayScore(records, profile, dk);
-  const windowKeys = getPastDateKeys(dk, 4).reverse();
-  const weights = [0.4, 0.3, 0.2, 0.1];
-  let weightedSum = 0;
-  let weightTotal = 0;
-
-  windowKeys.forEach((k, idx) => {
-    const hasLog =
-      k === dk ||
-      Boolean(
-        records[k] &&
-          (records[k].conditionLevel !== null ||
-            records[k].normalizedWeight !== null ||
-            records[k].completedWorkouts.length > 0)
-      );
-    if (!hasLog) return;
-    const dayScore = computeSingleDayScore(records, profile, k).dailyTotal;
-    weightedSum += dayScore * weights[idx];
-    weightTotal += weights[idx];
-  });
-
-  const rollingAvg = weightTotal > 0 ? weightedSum / weightTotal : todayParts.dailyTotal;
-  const streakDays = calculateStreakDays(records, dk);
-  const streakBonus = Math.min(12, streakDays * 1.2);
-
-  let target = Math.round(rollingAvg * 0.88 + streakBonus);
-  if (streakDays < 5) {
-    target = Math.min(84, target);
-  } else if (streakDays < 10) {
-    target = Math.min(93, target);
-  }
-  return Math.max(0, Math.min(100, target));
-}
-
 /**
- * Cumulative Recovery Score (0..100) with Daily Delta Cap (±8pt/day):
- * Iterates over the past 14 days so each day's score can change by at most ±8pt
- * (roughly ±1-2 stages/day), preventing single-day spikes to Stage 10 (Goku).
+ * Cumulative Recovery Score (0..100):
+ * - Fatigue ("不調・疲れ気味") NEVER causes a score penalty.
+ * - Penalty (-6pt/day, capped at -8pt/day) applies ONLY on past days with ZERO actions
+ *   (no condition check-in, no weight log, no workout, no running, no task).
+ * - Any single action preserves the streak and prevents score decay.
+ * - Daily upward/downward change is capped at ±8pt/day, and Stage 9/10 require 5+/10+ streak days.
  */
 export function calculateScoreBreakdown(
   records: Record<string, DailyRecord>,
@@ -162,15 +139,44 @@ export function calculateScoreBreakdown(
   const MAX_DAILY_DELTA = 8;
   const horizonKeys = getPastDateKeys(dateKey, 14);
 
-  let runningScore = computeTargetCumulativeScore(records, profile, horizonKeys[0]);
-  for (let i = 1; i < horizonKeys.length; i++) {
-    const dk = horizonKeys[i];
-    const target = computeTargetCumulativeScore(records, profile, dk);
-    const delta = Math.max(-MAX_DAILY_DELTA, Math.min(MAX_DAILY_DELTA, target - runningScore));
-    runningScore = Math.max(0, Math.min(100, Math.round(runningScore + delta)));
+  let runningScore = 40;
+  const firstRec = records[horizonKeys[0]];
+  if (hasAnyDailyAction(firstRec)) {
+    runningScore = Math.max(30, computePositiveDayScore(records, profile, horizonKeys[0]).dailyTotal);
   }
 
-  const todayParts = computeSingleDayScore(records, profile, dateKey);
+  for (let i = 1; i < horizonKeys.length; i++) {
+    const dk = horizonKeys[i];
+    const rec = records[dk];
+    const isToday = dk === dateKey;
+    const acted = hasAnyDailyAction(rec);
+
+    if (!acted) {
+      // Only penalize completed past days where the user did NOTHING; never penalize today while in progress
+      if (!isToday) {
+        runningScore = Math.max(0, runningScore - 6);
+      }
+      continue;
+    }
+
+    const dayParts = computePositiveDayScore(records, profile, dk);
+    const streak = calculateStreakDays(records, dk);
+    const streakBonus = Math.min(15, streak * 1.5);
+    let target = Math.round(dayParts.dailyTotal + streakBonus);
+
+    if (streak < 5) {
+      target = Math.min(84, target);
+    } else if (streak < 10) {
+      target = Math.min(93, target);
+    }
+
+    // Fatigue never drops the score on an active day; score only moves upward or holds
+    const rawDelta = Math.max(0, target - runningScore);
+    const clampedDelta = Math.min(MAX_DAILY_DELTA, rawDelta);
+    runningScore = Math.max(0, Math.min(100, runningScore + clampedDelta));
+  }
+
+  const todayParts = computePositiveDayScore(records, profile, dateKey);
 
   // 7-day strength display for STRENGTH card (0..30)
   const past7 = getPastDateKeys(dateKey, 7);
@@ -178,7 +184,10 @@ export function calculateScoreBreakdown(
   for (const k of past7) {
     const r = records[k];
     if (!r) continue;
-    workoutUnits += r.completedWorkouts.length * 1.5 + r.completedTasks.length * 0.6;
+    workoutUnits +=
+      r.completedWorkouts.length * 1.5 +
+      r.completedTasks.length * 0.6 +
+      (r.runningDistanceKm ?? 0) * 0.8;
   }
   const displayStrength = Math.round(Math.min(30, workoutUnits * 1.4));
 
@@ -306,14 +315,11 @@ export function calculateStreakDays(records: Record<string, DailyRecord>, todayK
   let streak = 0;
   let cursor = todayKey;
 
-  const hasActivity = (r?: DailyRecord) =>
-    Boolean(r && (r.conditionLevel !== null || r.rawWeight !== null || r.completedWorkouts.length > 0));
-
-  if (!hasActivity(records[cursor])) {
+  if (!hasAnyDailyAction(records[cursor])) {
     cursor = shiftDateKey(cursor, -1);
   }
 
-  while (hasActivity(records[cursor])) {
+  while (hasAnyDailyAction(records[cursor])) {
     streak += 1;
     cursor = shiftDateKey(cursor, -1);
   }
@@ -334,8 +340,8 @@ export function generateDailyTasks(
   if (isFatigued) {
     tasks.push({
       id: 'task_stretch',
-      title: 'バイト後／就寝前リラックスストレッチ',
-      subtitle: shiftHours === 'long' ? '長時間シフトの筋疲労を抜く' : '副交感神経を優位にする',
+      title: '【ケア】バイト後・就寝前・肩腰ストレッチ',
+      subtitle: '疲労日は減点なし！ストレッチ1つでストリーク継続',
       category: 'recovery',
     });
     tasks.push({
@@ -358,8 +364,14 @@ export function generateDailyTasks(
   if (isEnergetic) {
     tasks.push({
       id: 'task_strength',
-      title: '腕立て伏せ＆腹筋（クランチ／プランク）',
-      subtitle: '好調な日に上半身・体幹へ刺激を入れる',
+      title: '【強化】腕立て・腹筋（レッグレイズ/プランク）',
+      subtitle: '好調な日に上半身と体幹をしっかり鍛える',
+      category: 'strength',
+    });
+    tasks.push({
+      id: 'task_run_goal',
+      title: '【強化】ランニング（2〜5km 目標）＆距離記録',
+      subtitle: '走行距離（km）に応じてスコアが累積アップ',
       category: 'strength',
     });
     tasks.push({
@@ -368,16 +380,10 @@ export function generateDailyTasks(
       subtitle: '目標体重に向けた回復カーブを確認',
       category: 'weight',
     });
-    tasks.push({
-      id: 'task_cooldown',
-      title: '就寝前ストレッチ＆水分補給',
-      subtitle: '明日に疲労を残さないリカバリー',
-      category: 'recovery',
-    });
     return tasks.slice(0, 3);
   }
 
-  // Neutral day (普通 or unanswered)
+  // 普通 (Balance mode) or unanswered
   tasks.push({
     id: 'task_weight',
     title: '毎日の体重記録（食前/食後タグ選択）',
@@ -386,8 +392,8 @@ export function generateDailyTasks(
   });
   tasks.push({
     id: 'task_light_move',
-    title: shiftHours === 'medium' ? '膝つき腕立て＆プランク（30秒）' : '体幹プランク＆ストレッチ',
-    subtitle: '無理のない範囲で筋力ベースを維持',
+    title: '【バランス】腕立て・クランチ＆軽いジョギング',
+    subtitle: '無理のない範囲で筋力と心肺ベースを維持',
     category: 'strength',
   });
   tasks.push({
