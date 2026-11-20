@@ -45,3 +45,29 @@ input[type='range'].volt-slider::-webkit-slider-thumb {
   cursor: pointer;
   box-shadow: 0 0 10px rgba(204, 255, 0, 0.7);
 }
+
+@keyframes rebuild-road-scroll {
+  0% {
+    transform: translate3d(0, 0, 0);
+  }
+  100% {
+    transform: translate3d(-48px, 0, 0);
+  }
+}
+
+@keyframes rebuild-speed-line {
+  0% {
+    transform: translate3d(120%, 0, 0);
+    opacity: 0;
+  }
+  15% {
+    opacity: 0.85;
+  }
+  85% {
+    opacity: 0.75;
+  }
+  100% {
+    transform: translate3d(-240%, 0, 0);
+    opacity: 0;
+  }
+}

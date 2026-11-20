@@ -29,14 +29,90 @@ const VIDEO_LIST: { key: VideoKey; file: string }[] = [
   { key: 'stage10_goku', file: 'videos/stage10_goku.mp4' },
 ];
 
-function getVideoConfig(stage: number): { key: VideoKey; playbackRate: number } {
-  if (stage === 0) return { key: 'stage0_crawl', playbackRate: 0.7 };
-  if (stage <= 3) return { key: 'stage1_walk', playbackRate: 0.9 };
-  if (stage <= 6) return { key: 'stage4_jog', playbackRate: 0.85 };
-  if (stage <= 8) return { key: 'stage7_run', playbackRate: 1.45 };
-  if (stage === 9) return { key: 'stage9_cr7', playbackRate: 1.65 };
-  return { key: 'stage10_goku', playbackRate: 1.85 };
+interface StageVisualConfig {
+  key: VideoKey;
+  playbackRate: number;
+  roadDurationSec: number; // CSS translateX loop duration (smaller = faster)
+  accentColor: string;
+  bgGlow: string;
+  showSpeedLines: boolean;
 }
+
+function getStageVisualConfig(stage: number): StageVisualConfig {
+  if (stage === 0) {
+    return {
+      key: 'stage0_crawl',
+      playbackRate: 0.75,
+      roadDurationSec: 1.4,
+      accentColor: '#FF3B30',
+      bgGlow: 'radial-gradient(circle at 50% 52%, rgba(255, 59, 48, 0.52) 0%, rgba(255, 59, 48, 0.16) 36%, #111214 70%)',
+      showSpeedLines: false,
+    };
+  }
+  if (stage <= 3) {
+    return {
+      key: 'stage1_walk',
+      playbackRate: 0.9,
+      roadDurationSec: 0.9,
+      accentColor: '#99CC00',
+      bgGlow: 'radial-gradient(circle at 50% 52%, rgba(153, 204, 0, 0.34) 0%, rgba(153, 204, 0, 0.10) 36%, #111214 70%)',
+      showSpeedLines: false,
+    };
+  }
+  if (stage <= 6) {
+    // Stage 4-6 (Jogging): standard road speed (0.45s) & #CCFF00 glow
+    return {
+      key: 'stage4_jog',
+      playbackRate: 0.85,
+      roadDurationSec: 0.45,
+      accentColor: '#CCFF00',
+      bgGlow: 'radial-gradient(circle at 50% 52%, rgba(204, 255, 0, 0.52) 0%, rgba(204, 255, 0, 0.14) 38%, #111214 72%)',
+      showSpeedLines: false,
+    };
+  }
+  if (stage <= 8) {
+    // Stage 7-8 (Full Sprint): 2.5x faster road scroll (0.45 / 2.5 = 0.18s), #00F0FF x #CCFF00 gradient, CSS speed lines
+    return {
+      key: 'stage7_run',
+      playbackRate: 1.45,
+      roadDurationSec: 0.18,
+      accentColor: '#00F0FF',
+      bgGlow: 'radial-gradient(circle at 50% 50%, rgba(0, 240, 255, 0.62) 0%, rgba(204, 255, 0, 0.28) 38%, #111214 74%)',
+      showSpeedLines: true,
+    };
+  }
+  if (stage === 9) {
+    // Stage 9 (CR7): Gold x Volt spotlight
+    return {
+      key: 'stage9_cr7',
+      playbackRate: 1.65,
+      roadDurationSec: 0.14,
+      accentColor: '#FFD60A',
+      bgGlow: 'radial-gradient(circle at 50% 48%, rgba(255, 214, 10, 0.68) 0%, rgba(204, 255, 0, 0.30) 40%, #111214 75%)',
+      showSpeedLines: true,
+    };
+  }
+  // Stage 10 (GOKU): Aura Blue x White
+  return {
+    key: 'stage10_goku',
+    playbackRate: 1.85,
+    roadDurationSec: 0.11,
+    accentColor: '#00D4FF',
+    bgGlow: 'radial-gradient(circle at 50% 48%, rgba(255, 255, 255, 0.72) 0%, rgba(0, 212, 255, 0.48) 34%, rgba(0, 212, 255, 0.14) 56%, #111214 78%)',
+    showSpeedLines: true,
+  };
+}
+
+const CSS_SPEED_LINES = [
+  { top: '16%', width: '92px', delay: '0s', dur: '0.42s' },
+  { top: '24%', width: '130px', delay: '0.12s', dur: '0.36s' },
+  { top: '33%', width: '78px', delay: '0.24s', dur: '0.44s' },
+  { top: '42%', width: '145px', delay: '0.06s', dur: '0.34s' },
+  { top: '51%', width: '105px', delay: '0.18s', dur: '0.40s' },
+  { top: '60%', width: '120px', delay: '0.30s', dur: '0.38s' },
+  { top: '68%', width: '88px', delay: '0.10s', dur: '0.45s' },
+  { top: '76%', width: '112px', delay: '0.22s', dur: '0.35s' },
+];
 
 export const RunnerCanvas: React.FC<RunnerCanvasProps> = ({
   score,
@@ -50,7 +126,7 @@ export const RunnerCanvas: React.FC<RunnerCanvasProps> = ({
   const videoRefs = useRef<Partial<Record<VideoKey, HTMLVideoElement | null>>>({});
 
   const stage = stageInfo.stage;
-  const activeCfg = getVideoConfig(stage);
+  const activeCfg = getStageVisualConfig(stage);
   const base = import.meta.env.BASE_URL || './';
 
   useEffect(() => {
@@ -63,7 +139,6 @@ export const RunnerCanvas: React.FC<RunnerCanvasProps> = ({
     return () => window.clearInterval(id);
   }, [autoPlay, onDebugScoreChange]);
 
-  // Apply stage-specific playbackRate directly to the active <video>
   useEffect(() => {
     const vid = videoRefs.current[activeCfg.key];
     if (vid) {
@@ -76,7 +151,34 @@ export const RunnerCanvas: React.FC<RunnerCanvasProps> = ({
 
   return (
     <section className="relative w-full h-[38vh] min-h-[275px] max-h-[345px] bg-[#111214] border-b border-[#2C2F36] overflow-hidden select-none">
-      {/* Hardware-accelerated stacked <video> elements (zero Canvas / zero pixel processing) */}
+      {/* Stage-Specific Radial Neon Backdrop (shines through white areas via mix-blend-mode: multiply) */}
+      <div
+        className="absolute inset-0 pointer-events-none transition-all duration-300"
+        style={{ background: activeCfg.bgGlow }}
+      />
+
+      {/* GPU-Accelerated CSS Speed Lines (Stage 7-10) */}
+      {activeCfg.showSpeedLines && (
+        <div
+          className="absolute inset-x-0 top-3 pointer-events-none overflow-hidden"
+          style={{ bottom: showDebug ? '76px' : '24px' }}
+        >
+          {CSS_SPEED_LINES.map((line, i) => (
+            <span
+              key={i}
+              className="absolute right-0 h-[1.5px] rounded-full"
+              style={{
+                top: line.top,
+                width: line.width,
+                background: `linear-gradient(to left, ${activeCfg.accentColor}, transparent)`,
+                animation: `rebuild-speed-line ${line.dur} linear ${line.delay} infinite`,
+              }}
+            />
+          ))}
+        </div>
+      )}
+
+      {/* Stacked <video> elements: pure black silhouette + transparent white via mix-blend-mode: multiply */}
       <div
         className="absolute inset-x-0 top-3 flex items-center justify-center pointer-events-none"
         style={{ bottom: showDebug ? '76px' : '24px' }}
@@ -100,12 +202,24 @@ export const RunnerCanvas: React.FC<RunnerCanvasProps> = ({
                   isActive ? 'opacity-100' : 'opacity-0 pointer-events-none'
                 }`}
                 style={{
-                  filter: 'invert(1)',
-                  mixBlendMode: 'screen',
+                  mixBlendMode: 'multiply',
                 }}
               />
             );
           })}
+        </div>
+
+        {/* GPU-Accelerated CSS Scrolling Ground Dash Line */}
+        <div className="absolute bottom-0 inset-x-0 h-[3px] overflow-hidden">
+          <div
+            className="h-full"
+            style={{
+              width: 'calc(100% + 96px)',
+              backgroundImage: `repeating-linear-gradient(to right, ${activeCfg.accentColor} 0 28px, transparent 28px 48px)`,
+              opacity: stage <= 3 ? 0.55 : 0.88,
+              animation: `rebuild-road-scroll ${activeCfg.roadDurationSec}s linear infinite`,
+            }}
+          />
         </div>
       </div>
 
