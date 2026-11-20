@@ -70,44 +70,102 @@ export function getLatestNormalizedWeight(
   return { weight: records[k].normalizedWeight as number, dateKey: k };
 }
 
-export function calculateScoreBreakdown(
+function computeSingleDayScore(
   records: Record<string, DailyRecord>,
   profile: UserProfile,
-  dateKey: string
-): ScoreBreakdown {
-  const rec = records[dateKey];
+  dk: string
+): { conditionScore: number; weightScore: number; strengthScore: number; dailyTotal: number } {
+  const rec = records[dk];
 
-  // 1. Condition Score (0..40)
+  // 1. Condition (0..40)
   const conditionScore = getConditionPoints(rec?.conditionLevel ?? null);
 
-  // 2. Weight Recovery Score (0..30)
-  const latestWeightInfo = getLatestNormalizedWeight(records, dateKey);
-  let weightScore = 15; // default neutral if no weight logged yet
+  // 2. Normalized Weight Progress (0..30)
+  const latestWeightInfo = getLatestNormalizedWeight(records, dk);
+  let weightScore = 10;
   if (latestWeightInfo) {
     const span = Math.max(1, profile.targetWeight - profile.baselineWeight);
     const progress = (latestWeightInfo.weight - profile.baselineWeight) / span;
     weightScore = Math.round(Math.max(0, Math.min(1, progress)) * 30);
   }
 
-  // 3. Strength & Consistency Score (0..30)
-  // Combines 7-day workout activity + today's completed workouts/tasks
-  const past7 = getPastDateKeys(dateKey, 7);
-  let workoutUnits = 0;
-  for (const k of past7) {
-    const r = records[k];
-    if (!r) continue;
-    workoutUnits += r.completedWorkouts.length * 1.5 + r.completedTasks.length * 0.5;
-  }
-  const todayBonus = (rec?.completedWorkouts.length ?? 0) * 3 + (rec?.completedTasks.length ?? 0) * 1.5;
-  const strengthScore = Math.round(Math.min(30, workoutUnits * 1.4 + todayBonus));
-
-  const totalScore = Math.max(0, Math.min(100, conditionScore + weightScore + strengthScore));
+  // 3. Daily Strength & Task Consistency (0..30)
+  const workouts = rec?.completedWorkouts.length ?? 0;
+  const tasks = rec?.completedTasks.length ?? 0;
+  const strengthScore = Math.round(Math.min(30, workouts * 7 + tasks * 3.5));
 
   return {
     conditionScore,
     weightScore,
     strengthScore,
-    totalScore,
+    dailyTotal: Math.max(0, Math.min(100, conditionScore + weightScore + strengthScore)),
+  };
+}
+
+/**
+ * Cumulative Recovery Score (0..100):
+ * - Smooths over the past 4 days (rolling weighted average) so a single day's input
+ *   never causes wild jumps or instant Stage 10 (Goku) spikes.
+ * - Rewards consecutive streak days, and gates Stage 9 (CR7: 90+) and Stage 10 (Goku: 96+)
+ *   behind sustained multi-day streaks (5+ days for CR7, 10+ days for Goku).
+ */
+export function calculateScoreBreakdown(
+  records: Record<string, DailyRecord>,
+  profile: UserProfile,
+  dateKey: string
+): ScoreBreakdown {
+  const todayParts = computeSingleDayScore(records, profile, dateKey);
+
+  // Rolling 4-day weighted average (today + past 3 days)
+  const windowKeys = getPastDateKeys(dateKey, 4).reverse(); // [today, -1, -2, -3]
+  const weights = [0.4, 0.3, 0.2, 0.1];
+  let weightedSum = 0;
+  let weightTotal = 0;
+
+  windowKeys.forEach((dk, idx) => {
+    const hasLog =
+      dk === dateKey ||
+      Boolean(
+        records[dk] &&
+          (records[dk].conditionLevel !== null ||
+            records[dk].normalizedWeight !== null ||
+            records[dk].completedWorkouts.length > 0)
+      );
+    if (!hasLog) return;
+    const dayScore = computeSingleDayScore(records, profile, dk).dailyTotal;
+    weightedSum += dayScore * weights[idx];
+    weightTotal += weights[idx];
+  });
+
+  const rollingAvg = weightTotal > 0 ? weightedSum / weightTotal : todayParts.dailyTotal;
+
+  // Streak bonus (up to +12pt) & anti-spike gates for Stage 9 (CR7) and Stage 10 (Goku)
+  const streakDays = calculateStreakDays(records, dateKey);
+  const streakBonus = Math.min(12, streakDays * 1.2);
+
+  let cumulative = Math.round(rollingAvg * 0.88 + streakBonus);
+
+  if (streakDays < 5) {
+    cumulative = Math.min(84, cumulative); // Cap at Stage 8 until 5-day streak
+  } else if (streakDays < 10) {
+    cumulative = Math.min(93, cumulative); // Cap at Stage 9 until 10-day streak
+  }
+
+  // Also compute 7-day strength display for the STRENGTH card (0..30)
+  const past7 = getPastDateKeys(dateKey, 7);
+  let workoutUnits = 0;
+  for (const k of past7) {
+    const r = records[k];
+    if (!r) continue;
+    workoutUnits += r.completedWorkouts.length * 1.5 + r.completedTasks.length * 0.6;
+  }
+  const displayStrength = Math.round(Math.min(30, workoutUnits * 1.4));
+
+  return {
+    conditionScore: todayParts.conditionScore,
+    weightScore: todayParts.weightScore,
+    strengthScore: displayStrength,
+    totalScore: Math.max(0, Math.min(100, cumulative)),
   };
 }
 
