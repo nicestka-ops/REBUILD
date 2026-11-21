@@ -31,6 +31,7 @@ import {
   getStageFromScore,
 } from './utils/recoveryEngine';
 import {
+  clearAllAppData,
   createEmptyDailyRecord,
   loadAppState,
   resetToDemoState,
@@ -332,6 +333,16 @@ export function App() {
     setAppState(resetToDemoState());
   };
 
+  const handleClearAllData = () => {
+    setDebugScore(null);
+    setDevTestMode(false);
+    const empty = clearAllAppData();
+    setAppState(empty);
+    if (supabaseClient && user) {
+      pushCloudState(supabaseClient, empty);
+    }
+  };
+
   const handleGoogleLogin = async () => {
     if (!supabaseClient) return;
     setAuthError(null);
@@ -372,11 +383,23 @@ export function App() {
       {/* Top Minimal Header */}
       <header className="sticky top-0 z-30 bg-[#111214]/90 backdrop-blur-md border-b border-[#2C2F36] pt-[env(safe-area-inset-top)]">
         <div className="max-w-3xl mx-auto px-4 h-12 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Activity className="w-4 h-4 text-[#CCFF00]" />
-            <span className="font-black tracking-[0.22em] text-sm text-white">
-              REBUILD
-            </span>
+          <div className="flex items-center gap-2.5">
+            {/* Hamburger (☰) Left Drawer Trigger */}
+            <button
+              type="button"
+              onClick={() => setIsSettingsOpen(true)}
+              className="p-1.5 rounded-lg bg-[#1C1E22] border border-[#2C2F36] text-[#8E929B] hover:text-[#CCFF00] hover:border-[#CCFF00]/50 transition-colors cursor-pointer"
+              title="設定・メニュー"
+              aria-label="設定メニュー"
+            >
+              <Menu className="w-4 h-4" />
+            </button>
+            <div className="flex items-center gap-2">
+              <Activity className="w-4 h-4 text-[#CCFF00]" />
+              <span className="font-black tracking-[0.22em] text-sm text-white">
+                REBUILD
+              </span>
+            </div>
           </div>
 
           <div className="flex items-center gap-2">
@@ -429,23 +452,13 @@ export function App() {
                 </>
               )}
             </button>
-
-            {/* Hamburger (☰) Settings Button */}
-            <button
-              type="button"
-              onClick={() => setIsSettingsOpen(true)}
-              className="p-1.5 rounded-lg bg-[#1C1E22] border border-[#2C2F36] text-[#8E929B] hover:text-[#CCFF00] hover:border-[#CCFF00]/50 transition-colors cursor-pointer"
-              title="設定・デバッグ"
-              aria-label="設定メニュー"
-            >
-              <Menu className="w-4 h-4" />
-            </button>
           </div>
         </div>
       </header>
 
       {/* Main Content */}
       <main className="flex-1 pb-[calc(5.5rem+env(safe-area-inset-bottom))]">
+        <div key={activeTab} className="animate-tab-enter">
         {activeTab === 'home' && (
           <>
             <RunnerCanvas
@@ -520,6 +533,7 @@ export function App() {
             />
           </div>
         )}
+        </div>
 
         {/* Reserved Nutrition Feature Slot (hidden while ENABLE_NUTRITION === false) */}
         {ENABLE_NUTRITION && (
@@ -566,23 +580,23 @@ export function App() {
         />
       )}
 
-      {/* Settings Modal (opened from ☰ button) */}
-      {isSettingsOpen && (
-        <SettingsModal
-          profile={appState.profile}
-          realScore={breakdown.totalScore}
-          debugScore={debugScore}
-          devTestMode={devTestMode}
-          onToggleDevTestMode={(enabled) => {
-            setDevTestMode(enabled);
-            if (!enabled) setDebugScore(null);
-          }}
-          onUpdateProfile={handleUpdateProfile}
-          onDebugScoreChange={setDebugScore}
-          onResetDemo={handleResetDemo}
-          onClose={() => setIsSettingsOpen(false)}
-        />
-      )}
+      {/* Left Slide-in Settings Drawer (opened from top-left ☰ button) */}
+      <SettingsModal
+        isOpen={isSettingsOpen}
+        profile={appState.profile}
+        realScore={breakdown.totalScore}
+        debugScore={debugScore}
+        devTestMode={devTestMode}
+        onToggleDevTestMode={(enabled) => {
+          setDevTestMode(enabled);
+          if (!enabled) setDebugScore(null);
+        }}
+        onUpdateProfile={handleUpdateProfile}
+        onDebugScoreChange={setDebugScore}
+        onResetDemo={handleResetDemo}
+        onClearAllData={handleClearAllData}
+        onClose={() => setIsSettingsOpen(false)}
+      />
 
       {/* Account & Notification Modal */}
       {accountModalTab && (

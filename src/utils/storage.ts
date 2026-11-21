@@ -121,3 +121,25 @@ export function resetToDemoState(): AppState {
   saveAppState(seed);
   return seed;
 }
+
+export function clearAllAppData(): AppState {
+  try {
+    const clearMatchingKeys = (store: Storage) => {
+      const toRemove: string[] = [];
+      for (let i = 0; i < store.length; i++) {
+        const k = store.key(i);
+        if (k && (k === STORAGE_KEY || k.startsWith('rebuild_'))) {
+          toRemove.push(k);
+        }
+      }
+      toRemove.forEach((k) => store.removeItem(k));
+    };
+    clearMatchingKeys(localStorage);
+    clearMatchingKeys(sessionStorage);
+  } catch {
+    // Ignore storage access errors silently
+  }
+  const empty = createEmptyAppState();
+  saveAppState(empty);
+  return empty;
+}
