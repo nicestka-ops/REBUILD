@@ -418,7 +418,7 @@ export function getShiftAndConditionPlan(
         '不調・疲労の日は減点されません。無理な筋トレは控え、ストレッチと休息を最優先にしましょう。',
       recommendedWorkoutIds: ['stretch_shift', 'stretch_shoulder', 'stretch_sleep'],
       optionalWorkoutIds:
-        shiftHours === 'none' ? ['pushup_knee', 'running_jog'] : ['pushup_knee'],
+        shiftHours === 'none' ? ['pushup_knee', 'running_goal'] : ['pushup_knee'],
     };
   }
 
@@ -433,7 +433,7 @@ export function getShiftAndConditionPlan(
       modeDesc:
         '8時間以上の稼働日は疲労回復を最優先。ストレッチを中心に体をほぐし、筋トレやランは任意枠に留めましょう。',
       recommendedWorkoutIds: ['stretch_shift', 'stretch_shoulder', 'stretch_sleep'],
-      optionalWorkoutIds: ['pushup_knee', 'abs_plank', 'running_jog'],
+      optionalWorkoutIds: ['pushup_knee', 'abs_plank', 'running_goal'],
     };
   }
 
@@ -449,9 +449,9 @@ export function getShiftAndConditionPlan(
         '4〜8時間バイトの日は消耗を抑えた膝つき腕立て・腹筋と、バイト後のリカバリーストレッチを中心に組みます。',
       recommendedWorkoutIds:
         effectiveCond === 3
-          ? ['pushup_knee', 'abs_crunch', 'abs_plank', 'stretch_shift', 'running_jog']
+          ? ['pushup_knee', 'abs_crunch', 'abs_plank', 'stretch_shift', 'running_goal']
           : ['pushup_knee', 'abs_plank', 'stretch_shift', 'stretch_shoulder'],
-      optionalWorkoutIds: effectiveCond === 3 ? ['running_goal'] : ['running_jog'],
+      optionalWorkoutIds: effectiveCond === 3 ? [] : ['running_goal'],
     };
   }
 
@@ -468,7 +468,7 @@ export function getShiftAndConditionPlan(
       recommendedWorkoutIds:
         effectiveCond === 3
           ? ['pushup_normal', 'abs_crunch', 'abs_plank', 'running_goal', 'stretch_shift']
-          : ['pushup_normal', 'abs_crunch', 'running_jog', 'stretch_shift'],
+          : ['pushup_normal', 'abs_crunch', 'running_goal', 'stretch_shift'],
       optionalWorkoutIds: ['stretch_sleep'],
     };
   }
@@ -489,7 +489,7 @@ export function getShiftAndConditionPlan(
     recommendedWorkoutIds:
       effectiveCond === 3
         ? ['pushup_normal', 'abs_crunch', 'abs_legraise', 'abs_plank', 'running_goal']
-        : ['pushup_normal', 'abs_crunch', 'abs_plank', 'running_jog'],
+        : ['pushup_normal', 'abs_crunch', 'abs_plank', 'running_goal'],
     optionalWorkoutIds: ['stretch_sleep'],
   };
 }

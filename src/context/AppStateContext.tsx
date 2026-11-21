@@ -149,8 +149,8 @@ export const AppStateProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     ) => {
       updateTodayRecord((rec) => {
         const nextWorkouts = [...rec.completedWorkouts];
-        if (km > 0 && !nextWorkouts.includes('running_jog') && !nextWorkouts.includes('running_goal')) {
-          nextWorkouts.push('running_jog');
+        if (km > 0 && !nextWorkouts.includes('running_goal')) {
+          nextWorkouts.push('running_goal');
         }
         const nextTasks = [...rec.completedTasks];
         if (markCompletedToday) {

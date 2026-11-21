@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { User } from '@supabase/supabase-js';
 import {
-  Activity,
   Bell,
   Dumbbell,
   Home,
@@ -273,7 +272,11 @@ function AppContent() {
               <Menu className="w-4 h-4" />
             </button>
             <div className="flex items-center gap-2">
-              <Activity className="w-4 h-4 text-[#CCFF00]" />
+              <img
+                src={`${import.meta.env.BASE_URL || './'}app-icon.jpg`}
+                alt="REBUILD"
+                className="w-6 h-6 rounded-md object-cover border border-[#CCFF00]/40"
+              />
               <span className="font-black tracking-[0.22em] text-sm text-white">
                 REBUILD
               </span>

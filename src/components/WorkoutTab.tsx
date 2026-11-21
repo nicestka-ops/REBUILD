@@ -130,25 +130,23 @@ const EXERCISES: ExerciseItem[] = [
     repsLabel: '1〜2分（全身伸ばし）',
     defaultSeconds: 60,
   },
-  // ランニング
-  {
-    id: 'running_jog',
-    category: 'running',
-    name: '軽いジョギング',
-    enName: 'LIGHT JOGGING',
-    target: '心肺機能・リズム回復',
-    repsLabel: '1〜2km（会話できるペース）',
-    defaultSeconds: 180,
-  },
+  // ランニング（1種類のみに統一）
   {
     id: 'running_goal',
     category: 'running',
-    name: 'ランニング（距離目標チャレンジ）',
-    enName: 'GOAL RUN',
-    target: '持久力・全身ビルド',
-    repsLabel: '2〜5km（下の記録欄に入力）',
+    name: 'ランニング',
+    enName: 'RUNNING',
+    target: '心肺持久力・全身コンディション',
+    repsLabel: '推奨距離・GPS安全コースで実施',
     defaultSeconds: 180,
   },
+];
+
+const WORKOUT_SUB_TABS: { id: CategoryId; label: string }[] = [
+  { id: 'running', label: 'ランニング' },
+  { id: 'pushup', label: '腕立て' },
+  { id: 'abs', label: '腹筋' },
+  { id: 'stretch', label: 'ストレッチ' },
 ];
 
 function playBeep(freq: number = 880, durationMs: number = 140) {
@@ -187,6 +185,9 @@ export const WorkoutTab: React.FC<WorkoutTabProps> = ({
   onSelectShift,
 }) => {
   const plan = getShiftAndConditionPlan(shiftHours, conditionLevel, score);
+  const [activeCategory, setActiveCategory] = useState<CategoryId>(
+    conditionLevel === 1 || shiftHours === 'long' ? 'stretch' : 'running'
+  );
   const [runInput, setRunInput] = useState<string>(
     (runningDistanceKm ?? (plan.recommendedRunKm > 0 ? plan.recommendedRunKm : 1.0)).toFixed(1)
   );
@@ -269,13 +270,23 @@ export const WorkoutTab: React.FC<WorkoutTabProps> = ({
   const progressPct =
     maxDuration > 0 ? Math.round(((maxDuration - secondsLeft) / maxDuration) * 100) : 0;
 
-  // Show ONLY today's menu determined by today's condition (3 levels) and shift hours
-  const filteredExercises = EXERCISES.filter((e) =>
+  // Category exercises + today's menu count
+  const todaysRecommendedExercises = EXERCISES.filter((e) =>
     plan.recommendedWorkoutIds.includes(e.id)
   );
-  const todaysCompletedCount = filteredExercises.filter((e) =>
+  const todaysCompletedCount = todaysRecommendedExercises.filter((e) =>
     completedWorkouts.includes(e.id)
   ).length;
+  const categoryExercises = EXERCISES.filter((e) => e.category === activeCategory);
+  const filteredExercises = categoryExercises.some((e) =>
+    plan.recommendedWorkoutIds.includes(e.id)
+  )
+    ? categoryExercises.filter(
+        (e) =>
+          plan.recommendedWorkoutIds.includes(e.id) ||
+          plan.optionalWorkoutIds.includes(e.id)
+      )
+    : categoryExercises;
 
   const parsedKm = parseFloat(runInput);
   const isValidKm = !Number.isNaN(parsedKm) && parsedKm >= 0.1 && parsedKm <= 50;
@@ -344,8 +355,37 @@ export const WorkoutTab: React.FC<WorkoutTabProps> = ({
         )}
       </div>
 
-      {/* Running Distance (km) Recorder with Shift x Condition Target */}
-      <div className="rounded-2xl bg-[#1C1E22] border border-[#2C2F36] p-4 space-y-3">
+      {/* 4-Category Sub-Tab Switcher (分散配置で過密解消) */}
+      <div className="grid grid-cols-4 gap-1 bg-[#1C1E22] p-1 rounded-xl border border-[#2C2F36]">
+        {WORKOUT_SUB_TABS.map((tab) => {
+          const isActive = activeCategory === tab.id;
+          const hasRecommended = EXERCISES.some(
+            (e) => e.category === tab.id && plan.recommendedWorkoutIds.includes(e.id)
+          );
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setActiveCategory(tab.id)}
+              className={`relative py-2 rounded-lg text-xs font-extrabold transition-colors cursor-pointer ${
+                isActive
+                  ? 'bg-[#CCFF00] text-black'
+                  : 'text-[#8E929B] hover:text-white'
+              }`}
+            >
+              <span>{tab.label}</span>
+              {hasRecommended && !isActive && (
+                <span className="ml-1 inline-block w-1.5 h-1.5 rounded-full bg-[#CCFF00] align-middle" />
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      {activeCategory === 'running' && (
+        <>
+          {/* Running Distance (km) Recorder with Shift x Condition Target */}
+          <div className="rounded-2xl bg-[#1C1E22] border border-[#2C2F36] p-4 space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <Footprints className="w-4 h-4 text-[#CCFF00]" />
@@ -483,8 +523,11 @@ export const WorkoutTab: React.FC<WorkoutTabProps> = ({
           onSaveRunningDistance(km, rt, toughCleared, markCompletedToday);
         }}
       />
+        </>
+      )}
 
-      {/* Countdown & Interval Timer */}
+      {/* Countdown & Interval Timer (shown on strength/stretch tabs) */}
+      {activeCategory !== 'running' && (
       <div className="rounded-2xl bg-[#1C1E22] border border-[#2C2F36] p-4 space-y-3.5">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -609,18 +652,19 @@ export const WorkoutTab: React.FC<WorkoutTabProps> = ({
           </div>
         </div>
       </div>
+      )}
 
-      {/* Today's Menu Only (Condition x Shift) */}
+      {/* Category Exercises (Filtered & Distributed) */}
       <div className="space-y-3">
         <div className="flex items-center justify-between px-1">
           <div className="flex items-center gap-2">
             <Dumbbell className="w-4 h-4 text-[#CCFF00]" />
             <h3 className="text-sm font-extrabold text-white tracking-wide">
-              TODAY&apos;S MENU（今日やるメニュー）
+              {WORKOUT_SUB_TABS.find((t) => t.id === activeCategory)?.label}メニュー
             </h3>
           </div>
           <span className="text-xs font-mono-athletic text-[#CCFF00] font-bold">
-            {todaysCompletedCount} / {filteredExercises.length} DONE
+            本日推奨: {todaysCompletedCount} / {todaysRecommendedExercises.length} DONE
           </span>
         </div>
 

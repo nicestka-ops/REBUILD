@@ -88,9 +88,16 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         }}
       >
         <div className="flex items-center justify-between px-5 py-4 border-b border-[#2C2F36]">
-          <h3 className="text-base font-extrabold text-white tracking-wide">
-            設定 &amp; メニュー
-          </h3>
+          <div className="flex items-center gap-2.5">
+            <img
+              src={`${import.meta.env.BASE_URL || './'}app-icon.jpg`}
+              alt="REBUILD"
+              className="w-7 h-7 rounded-lg object-cover border border-[#CCFF00]/40"
+            />
+            <h3 className="text-base font-extrabold text-white tracking-wide">
+              設定 &amp; メニュー
+            </h3>
+          </div>
           <button
             type="button"
             onClick={onClose}

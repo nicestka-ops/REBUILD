@@ -153,13 +153,32 @@ export const RunnerCanvas: React.FC<RunnerCanvasProps> = ({
   }, [autoPlay, onDebugScoreChange]);
 
   useEffect(() => {
-    const vid = videoRefs.current[activeCfg.key];
-    if (vid) {
+    const ensurePlay = () => {
+      const vid = videoRefs.current[activeCfg.key];
+      if (!vid) return;
+      vid.muted = true;
       vid.playbackRate = activeCfg.playbackRate;
       if (vid.paused) {
         vid.play().catch(() => {});
       }
-    }
+    };
+
+    ensurePlay();
+    const rafId = window.requestAnimationFrame(ensurePlay);
+
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') {
+        ensurePlay();
+      }
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', ensurePlay);
+
+    return () => {
+      window.cancelAnimationFrame(rafId);
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', ensurePlay);
+    };
   }, [activeCfg.key, activeCfg.playbackRate]);
 
   return (
@@ -211,6 +230,22 @@ export const RunnerCanvas: React.FC<RunnerCanvasProps> = ({
                 muted
                 playsInline
                 preload="auto"
+                onLoadedData={(e) => {
+                  const vid = e.currentTarget;
+                  vid.muted = true;
+                  vid.playbackRate = activeCfg.playbackRate;
+                  if (isActive && vid.paused) {
+                    vid.play().catch(() => {});
+                  }
+                }}
+                onCanPlay={(e) => {
+                  const vid = e.currentTarget;
+                  if (isActive && vid.paused) {
+                    vid.muted = true;
+                    vid.playbackRate = activeCfg.playbackRate;
+                    vid.play().catch(() => {});
+                  }
+                }}
                 onTimeUpdate={(e) => {
                   const vid = e.currentTarget;
                   if (vid.duration && vid.duration - vid.currentTime < 0.08) {
