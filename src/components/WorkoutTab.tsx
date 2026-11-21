@@ -11,7 +11,7 @@ import {
   Zap,
 } from 'lucide-react';
 import { ConditionLevel, ShiftHours, WorkoutExerciseId } from '../types/rebuild';
-import { normalizeConditionLevel } from '../utils/recoveryEngine';
+import { getShiftAndConditionPlan, SHIFT_OPTIONS } from '../utils/recoveryEngine';
 
 interface WorkoutTabProps {
   conditionLevel: ConditionLevel | number | null;
@@ -20,6 +20,7 @@ interface WorkoutTabProps {
   runningDistanceKm: number | null | undefined;
   onToggleWorkout: (id: WorkoutExerciseId) => void;
   onSaveRunningDistance: (km: number) => void;
+  onSelectShift?: (shift: ShiftHours) => void;
 }
 
 type CategoryId = 'pushup' | 'abs' | 'stretch' | 'running';
@@ -177,10 +178,12 @@ export const WorkoutTab: React.FC<WorkoutTabProps> = ({
   runningDistanceKm,
   onToggleWorkout,
   onSaveRunningDistance,
+  onSelectShift,
 }) => {
+  const plan = getShiftAndConditionPlan(shiftHours, conditionLevel);
   const [selectedCategory, setSelectedCategory] = useState<'all' | CategoryId>('all');
   const [runInput, setRunInput] = useState<string>(
-    (runningDistanceKm ?? 2.0).toFixed(1)
+    (runningDistanceKm ?? (plan.recommendedRunKm > 0 ? plan.recommendedRunKm : 1.0)).toFixed(1)
   );
   const [runSavedFlash, setRunSavedFlash] = useState(false);
 
@@ -261,35 +264,20 @@ export const WorkoutTab: React.FC<WorkoutTabProps> = ({
   const progressPct =
     maxDuration > 0 ? Math.round(((maxDuration - secondsLeft) / maxDuration) * 100) : 0;
 
-  const norm = normalizeConditionLevel(conditionLevel);
-  const isFatigued = norm === 1 || shiftHours === 'long';
-  const isPeak = norm === 3 && shiftHours !== 'long';
-
-  const recommendation = isFatigued
-    ? {
-        badge: 'RECOVERY CARE MODE',
-        title: '【リカバリー・ケアモード】ストレッチ中心',
-        desc: '不調・疲労の日は減点されません。無理な筋トレやランニングは避け、バイト後・就寝前・肩腰ストレッチで体をほぐしましょう。',
-        recommendedIds: ['stretch_shift', 'stretch_sleep', 'stretch_shoulder'] as WorkoutExerciseId[],
-      }
-    : isPeak
-    ? {
-        badge: 'POWER & RUNNING MODE',
-        title: '【強化・ランニングモード】しっかり動く',
-        desc: '好調なコンディションです！腕立て伏せ（回数チャレンジ）、腹筋（レッグレイズ/プランク）、ランニング（距離目標）でギアを上げましょう。',
-        recommendedIds: ['pushup_normal', 'abs_legraise', 'abs_plank', 'running_goal'] as WorkoutExerciseId[],
-      }
-    : {
-        badge: 'BALANCE MODE',
-        title: '【バランス維持モード】腕立て・腹筋・軽ジョグ',
-        desc: '腕立て伏せ（ノーマル/膝つき）、腹筋（クランチ/プランク）、軽いジョギングからバランス良く取り組みましょう。',
-        recommendedIds: ['pushup_knee', 'abs_crunch', 'abs_plank', 'running_jog'] as WorkoutExerciseId[],
-      };
-
-  const filteredExercises =
+  const baseExercises =
     selectedCategory === 'all'
       ? EXERCISES
       : EXERCISES.filter((e) => e.category === selectedCategory);
+
+  const filteredExercises = [...baseExercises].sort((a, b) => {
+    const rank = (id: WorkoutExerciseId) =>
+      plan.recommendedWorkoutIds.includes(id)
+        ? 0
+        : plan.optionalWorkoutIds.includes(id)
+        ? 1
+        : 2;
+    return rank(a.id) - rank(b.id);
+  });
 
   const parsedKm = parseFloat(runInput);
   const isValidKm = !Number.isNaN(parsedKm) && parsedKm >= 0.1 && parsedKm <= 50;
@@ -307,40 +295,100 @@ export const WorkoutTab: React.FC<WorkoutTabProps> = ({
     window.setTimeout(() => setRunSavedFlash(false), 1800);
   };
 
+  const actualKm = runningDistanceKm ?? 0;
+  const targetKm = plan.recommendedRunKm;
+  const runAchieved = targetKm > 0 ? actualKm >= targetKm : actualKm > 0;
+  const runProgressPct =
+    targetKm > 0 ? Math.min(100, Math.round((actualKm / targetKm) * 100)) : actualKm > 0 ? 100 : 0;
+
   const mins = String(Math.floor(secondsLeft / 60)).padStart(2, '0');
   const secs = String(secondsLeft % 60).padStart(2, '0');
 
   return (
     <div className="space-y-4">
-      {/* 3-Level Condition-Aware Recommendation Card */}
-      <div className="rounded-2xl bg-[#1C1E22] border border-[#2C2F36] p-4">
-        <div className="flex items-center justify-between mb-1.5">
+      {/* Shift + Condition-Aware Recommendation Card */}
+      <div className="rounded-2xl bg-[#1C1E22] border border-[#2C2F36] p-4 space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <span className="inline-flex items-center gap-1.5 text-[11px] font-extrabold tracking-widest text-[#CCFF00]">
             <Zap className="w-3.5 h-3.5" />
-            {recommendation.badge}
+            {plan.modeBadge}
           </span>
           <span className="text-[11px] font-semibold text-[#8E929B]">
-            体調: {norm === 1 ? '不調・疲れ気味' : norm === 2 ? '普通' : norm === 3 ? '好調' : '未回答'}
+            {plan.shiftLabel} × 体調: {plan.conditionLabel}
           </span>
         </div>
-        <h2 className="text-base font-extrabold text-white">{recommendation.title}</h2>
-        <p className="text-xs text-[#8E929B] mt-1 leading-relaxed">{recommendation.desc}</p>
+
+        <div>
+          <h2 className="text-base font-extrabold text-white">{plan.modeTitle}</h2>
+          <p className="text-xs text-[#8E929B] mt-1 leading-relaxed">{plan.modeDesc}</p>
+        </div>
+
+        {onSelectShift && (
+          <div className="flex items-center justify-between gap-2 pt-1 border-t border-[#2C2F36]">
+            <span className="text-[11px] font-bold text-[#8E929B]">今日のバイト:</span>
+            <div className="flex items-center gap-1 bg-[#111214] p-1 rounded-lg border border-[#2C2F36]">
+              {SHIFT_OPTIONS.map((s) => (
+                <button
+                  key={s.id}
+                  type="button"
+                  onClick={() => onSelectShift(s.id)}
+                  className={`px-2 py-0.5 rounded text-[11px] font-bold transition-colors cursor-pointer ${
+                    shiftHours === s.id
+                      ? 'bg-[#CCFF00] text-black'
+                      : 'text-[#8E929B] hover:text-white'
+                  }`}
+                >
+                  {s.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* Running Distance (km) Recorder */}
+      {/* Running Distance (km) Recorder with Shift x Condition Target */}
       <div className="rounded-2xl bg-[#1C1E22] border border-[#2C2F36] p-4 space-y-3">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <Footprints className="w-4 h-4 text-[#CCFF00]" />
             <h3 className="text-sm font-extrabold text-white tracking-wide">
               ランニング走行距離（km）
             </h3>
           </div>
-          {runningDistanceKm ? (
-            <span className="text-[11px] font-mono-athletic font-bold text-[#CCFF00]">
-              本日: {runningDistanceKm.toFixed(1)} km
+          <span className="px-2 py-0.5 rounded bg-[#CCFF00]/15 border border-[#CCFF00]/30 text-[11px] font-mono-athletic font-bold text-[#CCFF00]">
+            {plan.recommendedRunLabel}
+          </span>
+        </div>
+
+        {/* Recommended vs Actual Comparison Bar */}
+        <div className="rounded-xl bg-[#111214] border border-[#2C2F36] p-2.5 space-y-1.5">
+          <div className="flex items-center justify-between text-xs">
+            <span className="text-[#8E929B]">
+              実績:{' '}
+              <strong className="font-mono-athletic text-white">
+                {runningDistanceKm ? `${runningDistanceKm.toFixed(1)} km` : '未記録'}
+              </strong>
             </span>
-          ) : null}
+            <span
+              className={`font-mono-athletic text-[11px] font-extrabold ${
+                runAchieved ? 'text-[#CCFF00]' : 'text-[#8E929B]'
+              }`}
+            >
+              {targetKm === 0
+                ? actualKm > 0
+                  ? '任意ラン達成'
+                  : '休養・ケア優先'
+                : runAchieved
+                ? '推奨達成!'
+                : `目標まであと ${(targetKm - actualKm).toFixed(1)} km`}
+            </span>
+          </div>
+          <div className="w-full h-1.5 bg-[#252830] rounded-full overflow-hidden">
+            <div
+              className="h-full bg-[#CCFF00] transition-all duration-300"
+              style={{ width: `${runProgressPct}%` }}
+            />
+          </div>
         </div>
 
         <div className="flex items-center justify-between gap-2 bg-[#111214] border border-[#2C2F36] rounded-xl p-2.5">
@@ -567,7 +615,8 @@ export const WorkoutTab: React.FC<WorkoutTabProps> = ({
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
           {filteredExercises.map((ex) => {
             const done = completedWorkouts.includes(ex.id);
-            const isRecommended = recommendation.recommendedIds.includes(ex.id);
+            const isRecommended = plan.recommendedWorkoutIds.includes(ex.id);
+            const isOptional = plan.optionalWorkoutIds.includes(ex.id);
             const timerLabel =
               ex.defaultSeconds >= 60 ? `${ex.defaultSeconds / 60}分` : `${ex.defaultSeconds}s`;
             return (
@@ -587,6 +636,11 @@ export const WorkoutTab: React.FC<WorkoutTabProps> = ({
                     {isRecommended && (
                       <span className="px-1.5 py-0.5 rounded bg-[#CCFF00]/15 text-[#CCFF00] text-[9px] font-extrabold">
                         推奨
+                      </span>
+                    )}
+                    {!isRecommended && isOptional && (
+                      <span className="px-1.5 py-0.5 rounded bg-[#2C2F36] text-[#8E929B] text-[9px] font-bold">
+                        任意
                       </span>
                     )}
                   </div>

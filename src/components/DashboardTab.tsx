@@ -5,6 +5,7 @@ import {
   CheckCircle2,
   Circle,
   Dumbbell,
+  Footprints,
   Scale,
   Briefcase,
 } from 'lucide-react';
@@ -18,6 +19,7 @@ import {
 import {
   CONDITION_OPTIONS,
   generateDailyTasks,
+  getShiftAndConditionPlan,
   normalizeConditionLevel,
   SHIFT_OPTIONS,
 } from '../utils/recoveryEngine';
@@ -49,6 +51,7 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
 
   const normLevel = normalizeConditionLevel(todayRecord.conditionLevel);
   const isConditionMissing = normLevel === null;
+  const plan = getShiftAndConditionPlan(todayRecord.shiftHours, normLevel);
   const tasks = generateDailyTasks(
     todayRecord.shiftHours,
     normLevel,
@@ -242,6 +245,23 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
             })}
           </div>
         </div>
+
+        {/* Shift x Condition Recommended Running Distance Strip */}
+        <button
+          type="button"
+          onClick={onGoToWorkout}
+          className="w-full flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-[#111214] border border-[#2C2F36] hover:border-[#CCFF00]/50 transition-colors cursor-pointer text-left"
+        >
+          <div className="flex items-center gap-2 min-w-0">
+            <Footprints className="w-3.5 h-3.5 text-[#CCFF00] shrink-0" />
+            <span className="text-[11px] font-bold text-[#CCFF00] truncate">
+              {plan.recommendedRunLabel}
+            </span>
+          </div>
+          <span className="text-[11px] font-mono-athletic font-bold text-white shrink-0">
+            実績: {todayRecord.runningDistanceKm ? `${todayRecord.runningDistanceKm.toFixed(1)} km` : '未記録'}
+          </span>
+        </button>
 
         <div className="space-y-2">
           {tasks.map((task) => {

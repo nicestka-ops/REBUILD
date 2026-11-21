@@ -7,6 +7,7 @@ import {
   StageInfo,
   UserProfile,
   WeightTiming,
+  WorkoutExerciseId,
 } from '../types/rebuild';
 import { getPastDateKeys, shiftDateKey } from './dateJst';
 
@@ -342,28 +343,199 @@ export function calculateStreakDays(records: Record<string, DailyRecord>, todayK
   return streak;
 }
 
+export interface ShiftConditionPlan {
+  shiftLabel: string;
+  conditionLabel: string;
+  recommendedRunKm: number;
+  recommendedRunLabel: string;
+  modeBadge: string;
+  modeTitle: string;
+  modeDesc: string;
+  recommendedWorkoutIds: WorkoutExerciseId[];
+  optionalWorkoutIds: WorkoutExerciseId[];
+}
+
+export function getShiftAndConditionPlan(
+  shiftHours: ShiftHours,
+  conditionLevel: ConditionLevel | number | null
+): ShiftConditionPlan {
+  const norm = normalizeConditionLevel(conditionLevel);
+  const effectiveCond: 1 | 2 | 3 = norm ?? 2;
+
+  const shiftLabel =
+    shiftHours === 'none'
+      ? 'バイトなし'
+      : shiftHours === 'short'
+      ? '短時間 (〜4h)'
+      : shiftHours === 'medium'
+      ? '中時間 (4〜8h)'
+      : '長時間 (8h〜)';
+
+  const conditionLabel =
+    norm === 1
+      ? '不調・疲れ気味'
+      : norm === 2
+      ? '普通'
+      : norm === 3
+      ? '好調'
+      : '未回答（標準）';
+
+  // 1. Recommended Running Distance (km) matrix by shiftHours x conditionLevel
+  let recommendedRunKm = 3.0;
+  let recommendedRunLabel = '推奨: 3.0 km';
+
+  if (shiftHours === 'long') {
+    recommendedRunKm = 0.0;
+    recommendedRunLabel = '推奨: 0.0 km（休養・ストレッチ推奨 / 任意 0.5〜1.0 km）';
+  } else if (shiftHours === 'none') {
+    if (effectiveCond === 3) {
+      recommendedRunKm = 4.5;
+      recommendedRunLabel = '推奨: 4.0〜5.0 km';
+    } else if (effectiveCond === 1) {
+      recommendedRunKm = 1.5;
+      recommendedRunLabel = '推奨: 1.5 km（または休息）';
+    } else {
+      recommendedRunKm = 3.0;
+      recommendedRunLabel = '推奨: 3.0 km';
+    }
+  } else if (shiftHours === 'short') {
+    if (effectiveCond === 3) {
+      recommendedRunKm = 2.5;
+      recommendedRunLabel = '推奨: 2.5 km';
+    } else if (effectiveCond === 1) {
+      recommendedRunKm = 0.5;
+      recommendedRunLabel = '推奨: 0.0〜1.0 km';
+    } else {
+      recommendedRunKm = 1.8;
+      recommendedRunLabel = '推奨: 1.5〜2.0 km';
+    }
+  } else {
+    // medium (4~8h)
+    if (effectiveCond === 3) {
+      recommendedRunKm = 1.5;
+      recommendedRunLabel = '推奨: 1.5 km';
+    } else if (effectiveCond === 1) {
+      recommendedRunKm = 0.0;
+      recommendedRunLabel = '推奨: 0.0 km（休養推奨）';
+    } else {
+      recommendedRunKm = 1.0;
+      recommendedRunLabel = '推奨: 0.0〜1.0 km';
+    }
+  }
+
+  // 2. Workout Mode & Recommended / Optional Exercises
+  // If fatigued (condition === 1), prioritize stretch & light care across ALL shift types
+  if (norm === 1) {
+    return {
+      shiftLabel,
+      conditionLabel,
+      recommendedRunKm,
+      recommendedRunLabel,
+      modeBadge: 'RECOVERY CARE MODE',
+      modeTitle: `【疲労ケア優先】${shiftLabel} × 不調・疲れ気味`,
+      modeDesc:
+        '不調・疲労の日は減点されません。無理な筋トレは控え、ストレッチと休息を最優先にしましょう。',
+      recommendedWorkoutIds: ['stretch_shift', 'stretch_shoulder', 'stretch_sleep'],
+      optionalWorkoutIds:
+        shiftHours === 'none' ? ['pushup_knee', 'running_jog'] : ['pushup_knee'],
+    };
+  }
+
+  if (shiftHours === 'long') {
+    return {
+      shiftLabel,
+      conditionLabel,
+      recommendedRunKm,
+      recommendedRunLabel,
+      modeBadge: 'LONG SHIFT CARE',
+      modeTitle: '【長時間シフトケア】全身・腰・肩甲骨ストレッチ中心',
+      modeDesc:
+        '8時間以上の稼働日は疲労回復を最優先。ストレッチを中心に体をほぐし、筋トレやランは任意枠に留めましょう。',
+      recommendedWorkoutIds: ['stretch_shift', 'stretch_shoulder', 'stretch_sleep'],
+      optionalWorkoutIds: ['pushup_knee', 'abs_plank', 'running_jog'],
+    };
+  }
+
+  if (shiftHours === 'medium') {
+    return {
+      shiftLabel,
+      conditionLabel,
+      recommendedRunKm,
+      recommendedRunLabel,
+      modeBadge: 'MEDIUM SHIFT BALANCE',
+      modeTitle: '【中時間シフト】消耗を抑えた筋トレ＋リカバリー',
+      modeDesc:
+        '4〜8時間バイトの日は消耗を抑えた膝つき腕立て・腹筋と、バイト後のリカバリーストレッチを中心に組みます。',
+      recommendedWorkoutIds:
+        effectiveCond === 3
+          ? ['pushup_knee', 'abs_crunch', 'abs_plank', 'stretch_shift', 'running_jog']
+          : ['pushup_knee', 'abs_plank', 'stretch_shift', 'stretch_shoulder'],
+      optionalWorkoutIds: effectiveCond === 3 ? ['running_goal'] : ['running_jog'],
+    };
+  }
+
+  if (shiftHours === 'short') {
+    return {
+      shiftLabel,
+      conditionLabel,
+      recommendedRunKm,
+      recommendedRunLabel,
+      modeBadge: 'SHORT SHIFT ACTIVE',
+      modeTitle: '【短時間シフト】軽め〜標準の筋トレ＋短時間ラン',
+      modeDesc:
+        '〜4時間バイトの日は軽め〜標準の腕立て・腹筋に加え、短時間ランニングとストレッチをバランス良く実施しましょう。',
+      recommendedWorkoutIds:
+        effectiveCond === 3
+          ? ['pushup_normal', 'abs_crunch', 'abs_plank', 'running_goal', 'stretch_shift']
+          : ['pushup_normal', 'abs_crunch', 'running_jog', 'stretch_shift'],
+      optionalWorkoutIds: ['stretch_sleep'],
+    };
+  }
+
+  // shiftHours === 'none'
+  return {
+    shiftLabel,
+    conditionLabel,
+    recommendedRunKm,
+    recommendedRunLabel,
+    modeBadge: effectiveCond === 3 ? 'OFF-SHIFT POWER MODE' : 'OFF-SHIFT STANDARD',
+    modeTitle:
+      effectiveCond === 3
+        ? '【バイトなし×好調】筋トレ＆距離チャレンジメイン'
+        : '【バイトなし】腕立て・腹筋・ランニングメイン',
+    modeDesc:
+      'バイトがない日は腕立て伏せ（ノーマル/回数チャレンジ）、腹筋（クランチ・レッグレイズ・プランク）、ランニングをしっかり積むチャンスです。',
+    recommendedWorkoutIds:
+      effectiveCond === 3
+        ? ['pushup_normal', 'abs_crunch', 'abs_legraise', 'abs_plank', 'running_goal']
+        : ['pushup_normal', 'abs_crunch', 'abs_plank', 'running_jog'],
+    optionalWorkoutIds: ['stretch_sleep'],
+  };
+}
+
 export function generateDailyTasks(
   shiftHours: ShiftHours,
   conditionLevel: ConditionLevel | number | null,
   hasWeightToday: boolean
 ): DailyTask[] {
+  const plan = getShiftAndConditionPlan(shiftHours, conditionLevel);
   const norm = normalizeConditionLevel(conditionLevel);
-  const isFatigued = norm === 1 || shiftHours === 'long';
-  const isEnergetic = norm === 3 && shiftHours !== 'long';
-
   const tasks: DailyTask[] = [];
 
-  if (isFatigued) {
+  if (norm === 1 || shiftHours === 'long') {
     tasks.push({
       id: 'task_stretch',
-      title: '【ケア】バイト後・就寝前・肩腰ストレッチ',
-      subtitle: '疲労日は減点なし！ストレッチ1つでストリーク継続',
+      title:
+        shiftHours === 'long'
+          ? '【長時間ケア】全身・腰・肩甲骨ストレッチ'
+          : '【ケア】バイト後・就寝前・肩腰ストレッチ',
+      subtitle: `${plan.recommendedRunLabel}｜疲労日は減点なし・ストレッチ1つで継続`,
       category: 'recovery',
     });
     tasks.push({
       id: 'task_sleep',
       title: '23:30までに就寝（7h+睡眠確保）',
-      subtitle: '成長ホルモン分泌と体重回復を最優先',
+      subtitle: '成長ホルモン分泌と疲労リセットを最優先',
       category: 'sleep',
     });
     if (!hasWeightToday) {
@@ -377,17 +549,17 @@ export function generateDailyTasks(
     return tasks.slice(0, 3);
   }
 
-  if (isEnergetic) {
+  if (shiftHours === 'medium') {
     tasks.push({
-      id: 'task_strength',
-      title: '【強化】腕立て・腹筋（レッグレイズ/プランク）',
-      subtitle: '好調な日に上半身と体幹をしっかり鍛える',
+      id: 'task_medium_strength',
+      title: '【中時間】膝つき腕立て・腹筋＆バイト後ストレッチ',
+      subtitle: '消耗を抑えつつ体幹と回復を両立',
       category: 'strength',
     });
     tasks.push({
       id: 'task_run_goal',
-      title: '【強化】ランニング（2〜5km 目標）＆距離記録',
-      subtitle: '走行距離（km）に応じてスコアが累積アップ',
+      title: `ランニング目安（${plan.recommendedRunLabel}）`,
+      subtitle: '走行距離（km）の記録は累積スコアへ反映',
       category: 'strength',
     });
     tasks.push({
@@ -399,24 +571,27 @@ export function generateDailyTasks(
     return tasks.slice(0, 3);
   }
 
-  // 普通 (Balance mode) or unanswered
+  // none or short
+  tasks.push({
+    id: 'task_strength',
+    title:
+      shiftHours === 'none'
+        ? '【メイン】腕立て伏せ＆腹筋（クランチ/レッグレイズ/プランク）'
+        : '【短時間】腕立て・腹筋＆バイト後ストレッチ',
+    subtitle: `${plan.shiftLabel} × ${plan.conditionLabel} に合わせたメニュー`,
+    category: 'strength',
+  });
+  tasks.push({
+    id: 'task_run_goal',
+    title: `ランニング（${plan.recommendedRunLabel}）`,
+    subtitle: '0.1km単位で記録してスコアと推移グラフに反映',
+    category: 'strength',
+  });
   tasks.push({
     id: 'task_weight',
     title: '毎日の体重記録（食前/食後タグ選択）',
     subtitle: 'ブレを補正したベース体重をトラッキング',
     category: 'weight',
-  });
-  tasks.push({
-    id: 'task_light_move',
-    title: '【バランス】腕立て・クランチ＆軽いジョギング',
-    subtitle: '無理のない範囲で筋力と心肺ベースを維持',
-    category: 'strength',
-  });
-  tasks.push({
-    id: 'task_sleep',
-    title: '就寝前リラックスストレッチ＆睡眠',
-    subtitle: '翌朝JST 05:00のリセットに向けて回復',
-    category: 'sleep',
   });
 
   return tasks;

@@ -496,6 +496,7 @@ export function App() {
               runningDistanceKm={todayRecord.runningDistanceKm}
               onToggleWorkout={handleToggleWorkout}
               onSaveRunningDistance={handleSaveRunningDistance}
+              onSelectShift={handleSelectShift}
             />
           </div>
         )}
