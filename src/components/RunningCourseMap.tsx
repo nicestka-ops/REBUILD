@@ -17,6 +17,7 @@ import {
   Shuffle,
   Square,
   Trees,
+  WifiOff,
 } from 'lucide-react';
 import { RunningRouteType } from '../types/rebuild';
 import {
@@ -26,6 +27,37 @@ import {
   generateSafeRunningCourse,
   haversineKm,
 } from '../utils/runningCourse';
+
+const COURSE_STORAGE_KEY = 'rebuild_active_course_v1';
+
+interface PersistedCourseState {
+  startCoord: [number, number] | null;
+  routeType: RunningRouteType;
+  courseVariantSeed: number;
+  course: GeneratedCourse | null;
+  actualTrack: [number, number][];
+  clearedSpotIds: string[];
+}
+
+function loadPersistedCourse(): PersistedCourseState | null {
+  try {
+    const raw = localStorage.getItem(COURSE_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as PersistedCourseState;
+    if (!parsed || typeof parsed !== 'object') return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function savePersistedCourse(state: PersistedCourseState): void {
+  try {
+    localStorage.setItem(COURSE_STORAGE_KEY, JSON.stringify(state));
+  } catch {
+    // Ignore storage quota errors silently
+  }
+}
 
 interface RunningCourseMapProps {
   recommendedRunKm: number;
@@ -58,8 +90,11 @@ export const RunningCourseMap: React.FC<RunningCourseMapProps> = ({
   todayKey,
   onApplyRunResult,
 }) => {
+  const initialPersisted = useRef<PersistedCourseState | null>(loadPersistedCourse()).current;
+
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<L.Map | null>(null);
+  const tileLayerRef = useRef<L.TileLayer | null>(null);
   const plannedLayerRef = useRef<L.Polyline | null>(null);
   const actualLayerRef = useRef<L.Polyline | null>(null);
   const markersLayerRef = useRef<L.LayerGroup | null>(null);
@@ -67,23 +102,38 @@ export const RunningCourseMap: React.FC<RunningCourseMapProps> = ({
   const watchIdRef = useRef<number | null>(null);
 
   const [routeType, setRouteType] = useState<RunningRouteType>(
-    initialRouteType ?? 'round_trip'
+    initialPersisted?.routeType ?? initialRouteType ?? 'round_trip'
   );
-  // Start coordinate is locked once set; never auto-changed unless user clicks 再取得 / 手動スタート指定
-  const [startCoord, setStartCoord] = useState<[number, number] | null>(null);
-  const [courseVariantSeed, setCourseVariantSeed] = useState(0);
-  const [course, setCourse] = useState<GeneratedCourse | null>(null);
+  // Start coordinate & course are hydrated from localStorage and NEVER reset on offline/re-render
+  const [startCoord, setStartCoord] = useState<[number, number] | null>(
+    initialPersisted?.startCoord ?? null
+  );
+  const [courseVariantSeed, setCourseVariantSeed] = useState<number>(
+    initialPersisted?.courseVariantSeed ?? 0
+  );
+  const [course, setCourse] = useState<GeneratedCourse | null>(
+    initialPersisted?.course ?? null
+  );
   const [loadingCourse, setLoadingCourse] = useState(false);
 
+  const [isOffline, setIsOffline] = useState<boolean>(
+    typeof navigator !== 'undefined' ? !navigator.onLine : false
+  );
   const [gpsStatus, setGpsStatus] = useState<string>(
-    '「現在地を取得」または「手動スタート指定」で開始地点を設定すると、推奨距離の安全コースを固定描画します。'
+    initialPersisted?.course
+      ? '保存済みの現在地・安全コースを復元しました（再取得またはコース再考まで保持されます）。'
+      : '「現在地を取得」または「手動スタート指定」で開始地点を設定すると、推奨距離の安全コースを固定描画します。'
   );
   const [gpsError, setGpsError] = useState<string | null>(null);
   const [manualPickMode, setManualPickMode] = useState(false);
 
   const [isTracking, setIsTracking] = useState(false);
-  const [actualTrack, setActualTrack] = useState<[number, number][]>([]);
-  const [clearedSpotIds, setClearedSpotIds] = useState<string[]>([]);
+  const [actualTrack, setActualTrack] = useState<[number, number][]>(
+    initialPersisted?.actualTrack ?? []
+  );
+  const [clearedSpotIds, setClearedSpotIds] = useState<string[]>(
+    initialPersisted?.clearedSpotIds ?? []
+  );
   const [activeEventSpot, setActiveEventSpot] = useState<CourseSpot | null>(null);
   const [simStepIdx, setSimStepIdx] = useState(0);
 
@@ -94,17 +144,68 @@ export const RunningCourseMap: React.FC<RunningCourseMapProps> = ({
   const manualPickRef = useRef(manualPickMode);
   manualPickRef.current = manualPickMode;
 
-  // Initialize Leaflet Map once (neutral overview until GPS or user tap)
+  // Persist course state immediately whenever it changes
+  useEffect(() => {
+    savePersistedCourse({
+      startCoord,
+      routeType,
+      courseVariantSeed,
+      course,
+      actualTrack,
+      clearedSpotIds,
+    });
+  }, [startCoord, routeType, courseVariantSeed, course, actualTrack, clearedSpotIds]);
+
+  // Track online/offline status & refresh tiles seamlessly when back online
+  useEffect(() => {
+    const handleOffline = () => setIsOffline(true);
+    const handleOnline = () => {
+      setIsOffline(false);
+      mapRef.current?.invalidateSize();
+      tileLayerRef.current?.redraw();
+    };
+    window.addEventListener('offline', handleOffline);
+    window.addEventListener('online', handleOnline);
+    return () => {
+      window.removeEventListener('offline', handleOffline);
+      window.removeEventListener('online', handleOnline);
+    };
+  }, []);
+
+  // Explicit helper to generate & lock a course ONLY on intentional user actions
+  const triggerCourseGeneration = async (
+    coord: [number, number],
+    nextRouteType: RunningRouteType,
+    nextSeed: number
+  ) => {
+    setLoadingCourse(true);
+    setClearedSpotIds([]);
+    setActiveEventSpot(null);
+    setSimStepIdx(0);
+    const generated = await generateSafeRunningCourse(
+      coord,
+      recommendedRunKm,
+      nextRouteType,
+      nextSeed
+    );
+    setCourse(generated);
+    setLoadingCourse(false);
+  };
+
+  // Initialize Leaflet Map once
   useEffect(() => {
     if (!mapContainerRef.current || mapRef.current) return;
 
+    const initialCenter: [number, number] = startCoord ?? [36.2048, 138.2529];
+    const initialZoom = startCoord ? 14 : 5;
+
     const map = L.map(mapContainerRef.current, {
-      center: [36.2048, 138.2529],
-      zoom: 5,
+      center: initialCenter,
+      zoom: initialZoom,
       zoomControl: true,
     });
 
-    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    tileLayerRef.current = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '&copy; OpenStreetMap contributors',
       maxZoom: 19,
     }).addTo(map);
@@ -130,6 +231,7 @@ export const RunningCourseMap: React.FC<RunningCourseMapProps> = ({
       setManualPickMode(false);
       setGpsError(null);
       setGpsStatus('指定した地点にスタートを固定し、安全コースを生成しました。');
+      triggerCourseGeneration(picked, routeType, courseVariantSeed);
     });
 
     mapRef.current = map;
@@ -142,31 +244,6 @@ export const RunningCourseMap: React.FC<RunningCourseMapProps> = ({
       mapRef.current = null;
     };
   }, []);
-
-  // Generate course ONLY when startCoord, routeType, courseVariantSeed, or recommendedRunKm changes
-  useEffect(() => {
-    if (!startCoord) {
-      setCourse(null);
-      return;
-    }
-    let cancelled = false;
-    setLoadingCourse(true);
-    setClearedSpotIds([]);
-    setActiveEventSpot(null);
-    setSimStepIdx(0);
-
-    generateSafeRunningCourse(startCoord, recommendedRunKm, routeType, courseVariantSeed).then(
-      (generated) => {
-        if (cancelled) return;
-        setCourse(generated);
-        setLoadingCourse(false);
-      }
-    );
-
-    return () => {
-      cancelled = true;
-    };
-  }, [startCoord?.[0], startCoord?.[1], recommendedRunKm, routeType, courseVariantSeed]);
 
   // Render planned course polyline & markers onto Leaflet
   useEffect(() => {
@@ -276,7 +353,11 @@ export const RunningCourseMap: React.FC<RunningCourseMapProps> = ({
 
   const handleGetCurrentLocation = () => {
     if (!navigator.geolocation) {
-      setGpsError('このブラウザはGPS位置情報に対応していません。「手動スタート指定」または距離入力をご利用ください。');
+      setGpsError(
+        startCoord
+          ? 'GPSが利用できないため、保存済みの現在地・コースをそのまま維持します。'
+          : 'このブラウザはGPS位置情報に対応していません。「手動スタート指定」または距離入力をご利用ください。'
+      );
       return;
     }
     setGpsError(null);
@@ -286,11 +367,15 @@ export const RunningCourseMap: React.FC<RunningCourseMapProps> = ({
         const next: [number, number] = [pos.coords.latitude, pos.coords.longitude];
         setStartCoord(next);
         setActualTrack([next]);
-        setGpsStatus('現在地を固定し、安全コースを描画しました（再取得またはコース再考まで経路を保持します）。');
+        setGpsStatus('現在地を固定し、安全コースを描画しました（再取得またはコース再考まで保持します）。');
+        triggerCourseGeneration(next, routeType, courseVariantSeed);
       },
       () => {
+        // NEVER overwrite or reset existing startCoord/course on GPS failure or offline
         setGpsError(
-          '位置情報の許可が得られないか取得に失敗しました。「手動スタート指定」から地図をタップして開始地点を選ぶか、距離入力をご利用ください。'
+          startCoord
+            ? '現在地の再取得に失敗しました。保存済みのスタート地点・コースをそのまま維持します。'
+            : '位置情報の許可が得られないか取得に失敗しました。「手動スタート指定」から地図をタップして開始地点を選ぶか、距離入力をご利用ください。'
         );
       },
       { enableHighAccuracy: true, timeout: 6000 }
@@ -323,24 +408,41 @@ export const RunningCourseMap: React.FC<RunningCourseMapProps> = ({
     watchIdRef.current = navigator.geolocation.watchPosition(
       (pos) => {
         const next: [number, number] = [pos.coords.latitude, pos.coords.longitude];
-        // Keep startCoord locked if already set; only initialize once if null
-        setStartCoord((prev) => prev ?? next);
+        setStartCoord((prev) => {
+          if (prev) return prev;
+          triggerCourseGeneration(next, routeType, courseVariantSeed);
+          return next;
+        });
         setActualTrack((prev) => [...prev, next]);
         evaluateSpotProximity(next);
       },
       () => {
-        setGpsError('GPS信号の取得に失敗しました。手動スタート指定または距離入力をご利用ください。');
+        setGpsError(
+          startCoord
+            ? 'GPS信号が一時的に途切れました。保存済みのコース・軌跡は保持されています。'
+            : 'GPS信号の取得に失敗しました。手動スタート指定または距離入力をご利用ください。'
+        );
         setIsTracking(false);
       },
       { enableHighAccuracy: true, maximumAge: 3000 }
     );
   };
 
+  const handleSwitchRouteType = (nextType: RunningRouteType) => {
+    setRouteType(nextType);
+    if (startCoord) {
+      setActualTrack([]);
+      triggerCourseGeneration(startCoord, nextType, courseVariantSeed);
+    }
+  };
+
   const handleReconsiderCourse = () => {
     if (!startCoord) return;
-    setCourseVariantSeed((s) => s + 1);
+    const nextSeed = courseVariantSeed + 1;
+    setCourseVariantSeed(nextSeed);
     setActualTrack([]);
     setGpsStatus('別の方角・経由地で新しい安全コースを再生成しました。');
+    triggerCourseGeneration(startCoord, routeType, nextSeed);
   };
 
   const handleSimulateStep = () => {
@@ -389,12 +491,18 @@ export const RunningCourseMap: React.FC<RunningCourseMapProps> = ({
           <h3 className="text-sm font-extrabold text-white tracking-wide">
             GPS安全コース＆スポットナビ
           </h3>
+          {isOffline && (
+            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-[#FFD600]/15 border border-[#FFD600]/40 text-[10px] font-bold text-[#FFD600]">
+              <WifiOff className="w-3 h-3" />
+              オフライン保持中
+            </span>
+          )}
         </div>
 
         <div className="flex items-center gap-1 bg-[#111214] p-1 rounded-lg border border-[#2C2F36]">
           <button
             type="button"
-            onClick={() => setRouteType('round_trip')}
+            onClick={() => handleSwitchRouteType('round_trip')}
             className={`px-2.5 py-1 rounded text-[11px] font-extrabold transition-colors cursor-pointer ${
               routeType === 'round_trip'
                 ? 'bg-[#CCFF00] text-black'
@@ -405,7 +513,7 @@ export const RunningCourseMap: React.FC<RunningCourseMapProps> = ({
           </button>
           <button
             type="button"
-            onClick={() => setRouteType('one_way')}
+            onClick={() => handleSwitchRouteType('one_way')}
             className={`px-2.5 py-1 rounded text-[11px] font-extrabold transition-colors cursor-pointer ${
               routeType === 'one_way'
                 ? 'bg-[#CCFF00] text-black'
@@ -563,7 +671,7 @@ export const RunningCourseMap: React.FC<RunningCourseMapProps> = ({
         </div>
       )}
 
-      {/* Course Spots List (concrete categories + evidence-based tough point) */}
+      {/* Course Spots List */}
       {course && (
         <div className="space-y-1.5">
           <div className="flex items-center justify-between text-[11px] font-bold text-[#8E929B]">

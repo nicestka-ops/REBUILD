@@ -45,14 +45,6 @@ interface ExerciseItem {
   defaultSeconds: number;
 }
 
-const CATEGORY_TABS: { id: 'all' | CategoryId; label: string }[] = [
-  { id: 'all', label: 'すべて' },
-  { id: 'pushup', label: '腕立て' },
-  { id: 'abs', label: '腹筋' },
-  { id: 'stretch', label: 'ストレッチ' },
-  { id: 'running', label: 'ランニング' },
-];
-
 const EXERCISES: ExerciseItem[] = [
   // 腕立て伏せ
   {
@@ -195,7 +187,6 @@ export const WorkoutTab: React.FC<WorkoutTabProps> = ({
   onSelectShift,
 }) => {
   const plan = getShiftAndConditionPlan(shiftHours, conditionLevel, score);
-  const [selectedCategory, setSelectedCategory] = useState<'all' | CategoryId>('all');
   const [runInput, setRunInput] = useState<string>(
     (runningDistanceKm ?? (plan.recommendedRunKm > 0 ? plan.recommendedRunKm : 1.0)).toFixed(1)
   );
@@ -278,20 +269,13 @@ export const WorkoutTab: React.FC<WorkoutTabProps> = ({
   const progressPct =
     maxDuration > 0 ? Math.round(((maxDuration - secondsLeft) / maxDuration) * 100) : 0;
 
-  const baseExercises =
-    selectedCategory === 'all'
-      ? EXERCISES
-      : EXERCISES.filter((e) => e.category === selectedCategory);
-
-  const filteredExercises = [...baseExercises].sort((a, b) => {
-    const rank = (id: WorkoutExerciseId) =>
-      plan.recommendedWorkoutIds.includes(id)
-        ? 0
-        : plan.optionalWorkoutIds.includes(id)
-        ? 1
-        : 2;
-    return rank(a.id) - rank(b.id);
-  });
+  // Show ONLY today's menu determined by today's condition (3 levels) and shift hours
+  const filteredExercises = EXERCISES.filter((e) =>
+    plan.recommendedWorkoutIds.includes(e.id)
+  );
+  const todaysCompletedCount = filteredExercises.filter((e) =>
+    completedWorkouts.includes(e.id)
+  ).length;
 
   const parsedKm = parseFloat(runInput);
   const isValidKm = !Number.isNaN(parsedKm) && parsedKm >= 0.1 && parsedKm <= 50;
@@ -626,35 +610,18 @@ export const WorkoutTab: React.FC<WorkoutTabProps> = ({
         </div>
       </div>
 
-      {/* Category Filter + Exercise Completion Cards */}
+      {/* Today's Menu Only (Condition x Shift) */}
       <div className="space-y-3">
         <div className="flex items-center justify-between px-1">
           <div className="flex items-center gap-2">
             <Dumbbell className="w-4 h-4 text-[#CCFF00]" />
             <h3 className="text-sm font-extrabold text-white tracking-wide">
-              EXERCISES（腕立て・腹筋・ストレッチ・ランニング）
+              TODAY&apos;S MENU（今日やるメニュー）
             </h3>
           </div>
           <span className="text-xs font-mono-athletic text-[#CCFF00] font-bold">
-            {completedWorkouts.length} / {EXERCISES.length} DONE
+            {todaysCompletedCount} / {filteredExercises.length} DONE
           </span>
-        </div>
-
-        <div className="grid grid-cols-5 gap-1 bg-[#1C1E22] p-1 rounded-xl border border-[#2C2F36]">
-          {CATEGORY_TABS.map((cat) => (
-            <button
-              key={cat.id}
-              type="button"
-              onClick={() => setSelectedCategory(cat.id)}
-              className={`py-1.5 rounded-lg text-[11px] font-bold transition-colors cursor-pointer whitespace-nowrap ${
-                selectedCategory === cat.id
-                  ? 'bg-[#CCFF00] text-black'
-                  : 'text-[#8E929B] hover:text-white'
-              }`}
-            >
-              {cat.label}
-            </button>
-          ))}
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
