@@ -12,32 +12,9 @@ import {
   UserCheck,
   UserCircle2,
 } from 'lucide-react';
-import {
-  AppState,
-  ConditionLevel,
-  ENABLE_NUTRITION,
-  RunningRouteType,
-  ShiftHours,
-  TabId,
-  UserProfile,
-  WeightTiming,
-  WorkoutExerciseId,
-} from './types/rebuild';
+import { ENABLE_NUTRITION, TabId } from './types/rebuild';
 import { getJstNowFormatted, getJstRebuildDateKey } from './utils/dateJst';
-import {
-  calculateScoreBreakdown,
-  calculateStreakDays,
-  computeNormalizedWeight,
-  getLatestNormalizedWeight,
-  getStageFromScore,
-} from './utils/recoveryEngine';
-import {
-  clearAllAppData,
-  createEmptyDailyRecord,
-  loadAppState,
-  resetToDemoState,
-  saveAppState,
-} from './utils/storage';
+import { AppStateProvider, useAppState } from './context/AppStateContext';
 import {
   createSupabaseClientFromConfig,
   extractCloudStateFromUser,
@@ -67,12 +44,32 @@ import { QuickWeightModal } from './components/QuickWeightModal';
 import { AccountModal } from './components/AccountModal';
 import { SettingsModal } from './components/SettingsModal';
 
-export function App() {
-  const [appState, setAppState] = useState<AppState>(() => loadAppState());
+function AppContent() {
+  const {
+    appState,
+    todayKey,
+    setTodayKey,
+    todayRecord,
+    breakdown,
+    displayScore,
+    stageInfo,
+    streakDays,
+    latestWeightInfo,
+    debugScore,
+    setDebugScore,
+    replaceAppState,
+    selectCondition: handleSelectCondition,
+    selectShift: handleSelectShift,
+    toggleTask: handleToggleTask,
+    toggleWorkout: handleToggleWorkout,
+    saveRunningDistance: handleSaveRunningDistance,
+    saveWeight: handleSaveWeight,
+    updateProfile: handleUpdateProfile,
+    resetDemo: handleResetDemo,
+    clearAllData: contextClearAllData,
+  } = useAppState();
   const [activeTab, setActiveTab] = useState<TabId>('home');
-  const [todayKey, setTodayKey] = useState<string>(() => getJstRebuildDateKey());
   const [jstClock, setJstClock] = useState<string>(() => getJstNowFormatted());
-  const [debugScore, setDebugScore] = useState<number | null>(null);
   const [devTestMode, setDevTestMode] = useState(false);
   const [isWeightModalOpen, setIsWeightModalOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -97,10 +94,6 @@ export function App() {
   const [notifPermission, setNotifPermission] = useState<NotificationPermission | 'unsupported'>(() =>
     isNotificationSupported() ? Notification.permission : 'unsupported'
   );
-
-  useEffect(() => {
-    saveAppState(appState);
-  }, [appState]);
 
   useEffect(() => {
     registerRebuildServiceWorker();
@@ -138,7 +131,7 @@ export function App() {
       const cloudState = extractCloudStateFromUser(sessionUser);
       if (cloudState) {
         skipNextCloudPushRef.current = true;
-        setAppState(cloudState);
+        replaceAppState(cloudState);
         setSyncStatus('synced');
       }
     });
@@ -156,7 +149,7 @@ export function App() {
       const cloudState = extractCloudStateFromUser(nextUser);
       if (cloudState) {
         skipNextCloudPushRef.current = true;
-        setAppState(cloudState);
+        replaceAppState(cloudState);
         setSyncStatus('synced');
       }
     });
@@ -220,134 +213,9 @@ export function App() {
     };
   }, [notifSettings, appState.records]);
 
-  const todayRecord = useMemo(
-    () =>
-      appState.records[todayKey] ??
-      createEmptyDailyRecord(todayKey, appState.profile.defaultShiftHours ?? 'none'),
-    [appState.records, todayKey, appState.profile.defaultShiftHours]
-  );
-
-  const breakdown = useMemo(
-    () => calculateScoreBreakdown(appState.records, appState.profile, todayKey),
-    [appState.records, appState.profile, todayKey]
-  );
-
-  const displayScore = debugScore !== null ? debugScore : breakdown.totalScore;
-  const stageInfo = useMemo(() => getStageFromScore(displayScore), [displayScore]);
-  const streakDays = useMemo(
-    () => calculateStreakDays(appState.records, todayKey),
-    [appState.records, todayKey]
-  );
-
-  const latestWeightInfo = useMemo(
-    () => getLatestNormalizedWeight(appState.records, todayKey),
-    [appState.records, todayKey]
-  );
-
-  const updateTodayRecord = (updater: (prev: typeof todayRecord) => typeof todayRecord) => {
-    setAppState((prev) => {
-      const current =
-        prev.records[todayKey] ??
-        createEmptyDailyRecord(todayKey, prev.profile.defaultShiftHours ?? 'none');
-      return {
-        ...prev,
-        records: {
-          ...prev.records,
-          [todayKey]: updater(current),
-        },
-      };
-    });
-  };
-
-  const handleSelectCondition = (level: ConditionLevel) => {
-    updateTodayRecord((rec) => ({
-      ...rec,
-      conditionLevel: level,
-      conditionUpdatedAt: new Date().toISOString(),
-    }));
-  };
-
-  const handleSelectShift = (shiftHours: ShiftHours) => {
-    updateTodayRecord((rec) => ({
-      ...rec,
-      shiftHours,
-    }));
-  };
-
-  const handleToggleTask = (taskId: string) => {
-    updateTodayRecord((rec) => {
-      const exists = rec.completedTasks.includes(taskId);
-      return {
-        ...rec,
-        completedTasks: exists
-          ? rec.completedTasks.filter((id) => id !== taskId)
-          : [...rec.completedTasks, taskId],
-      };
-    });
-  };
-
-  const handleToggleWorkout = (workoutId: WorkoutExerciseId) => {
-    updateTodayRecord((rec) => {
-      const exists = rec.completedWorkouts.includes(workoutId);
-      return {
-        ...rec,
-        completedWorkouts: exists
-          ? rec.completedWorkouts.filter((id) => id !== workoutId)
-          : [...rec.completedWorkouts, workoutId],
-      };
-    });
-  };
-
-  const handleSaveRunningDistance = (
-    km: number,
-    routeType?: RunningRouteType,
-    toughPointsCleared?: number
-  ) => {
-    updateTodayRecord((rec) => {
-      const nextWorkouts = [...rec.completedWorkouts];
-      if (km > 0 && !nextWorkouts.includes('running_jog') && !nextWorkouts.includes('running_goal')) {
-        nextWorkouts.push('running_jog');
-      }
-      return {
-        ...rec,
-        runningDistanceKm: km,
-        runningRouteType: routeType ?? rec.runningRouteType ?? null,
-        runningToughPointsCleared:
-          toughPointsCleared !== undefined
-            ? Math.max(rec.runningToughPointsCleared ?? 0, toughPointsCleared)
-            : rec.runningToughPointsCleared ?? 0,
-        completedWorkouts: nextWorkouts,
-      };
-    });
-  };
-
-  const handleSaveWeight = (rawWeight: number, timing: WeightTiming) => {
-    const normalizedWeight = computeNormalizedWeight(rawWeight, timing);
-    updateTodayRecord((rec) => ({
-      ...rec,
-      rawWeight,
-      weightTiming: timing,
-      normalizedWeight,
-    }));
-  };
-
-  const handleUpdateProfile = (nextProfile: UserProfile) => {
-    setAppState((prev) => ({
-      ...prev,
-      profile: nextProfile,
-    }));
-  };
-
-  const handleResetDemo = () => {
-    setDebugScore(null);
-    setAppState(resetToDemoState());
-  };
-
   const handleClearAllData = () => {
-    setDebugScore(null);
     setDevTestMode(false);
-    const empty = clearAllAppData();
-    setAppState(empty);
+    const empty = contextClearAllData();
     if (supabaseClient && user) {
       pushCloudState(supabaseClient, empty);
     }
@@ -652,6 +520,14 @@ export function App() {
         />
       )}
     </div>
+  );
+}
+
+export function App() {
+  return (
+    <AppStateProvider>
+      <AppContent />
+    </AppStateProvider>
   );
 }
 

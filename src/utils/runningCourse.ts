@@ -21,20 +21,6 @@ export interface GeneratedCourse {
   source: 'osrm' | 'safe-fallback';
 }
 
-export interface PresetStartLocation {
-  id: string;
-  label: string;
-  lat: number;
-  lng: number;
-}
-
-export const PRESET_START_LOCATIONS: PresetStartLocation[] = [
-  { id: 'kokyo', label: '皇居外苑・桜田門', lat: 35.6789, lng: 139.7528 },
-  { id: 'yoyogi', label: '代々木公園・原宿口', lat: 35.6717, lng: 139.6966 },
-  { id: 'sumida', label: '隅田川テラス', lat: 35.7091, lng: 139.8016 },
-  { id: 'osaka', label: '大阪城公園', lat: 34.6873, lng: 135.5262 },
-];
-
 const EARTH_RADIUS_KM = 6371;
 
 export function haversineKm(a: [number, number], b: [number, number]): number {
@@ -87,7 +73,7 @@ function getCoordAtFraction(
   coords: [number, number][],
   fraction: number
 ): { coord: [number, number]; distanceKm: number } {
-  if (coords.length === 0) return { coord: [35.6789, 139.7528], distanceKm: 0 };
+  if (coords.length === 0) return { coord: [0, 0], distanceKm: 0 };
   if (coords.length === 1) return { coord: coords[0], distanceKm: 0 };
 
   const total = computePathDistanceKm(coords);
