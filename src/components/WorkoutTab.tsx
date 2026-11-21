@@ -16,6 +16,7 @@ import { getShiftAndConditionPlan, SHIFT_OPTIONS } from '../utils/recoveryEngine
 interface WorkoutTabProps {
   conditionLevel: ConditionLevel | number | null;
   shiftHours: ShiftHours;
+  score: number;
   completedWorkouts: WorkoutExerciseId[];
   runningDistanceKm: number | null | undefined;
   onToggleWorkout: (id: WorkoutExerciseId) => void;
@@ -174,13 +175,14 @@ function playBeep(freq: number = 880, durationMs: number = 140) {
 export const WorkoutTab: React.FC<WorkoutTabProps> = ({
   conditionLevel,
   shiftHours,
+  score,
   completedWorkouts,
   runningDistanceKm,
   onToggleWorkout,
   onSaveRunningDistance,
   onSelectShift,
 }) => {
-  const plan = getShiftAndConditionPlan(shiftHours, conditionLevel);
+  const plan = getShiftAndConditionPlan(shiftHours, conditionLevel, score);
   const [selectedCategory, setSelectedCategory] = useState<'all' | CategoryId>('all');
   const [runInput, setRunInput] = useState<string>(
     (runningDistanceKm ?? (plan.recommendedRunKm > 0 ? plan.recommendedRunKm : 1.0)).toFixed(1)
@@ -421,8 +423,21 @@ export const WorkoutTab: React.FC<WorkoutTabProps> = ({
         </div>
 
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="flex items-center gap-1.5">
-            {[1, 2, 3, 5].map((km) => (
+          <div className="flex flex-wrap items-center gap-1.5">
+            {targetKm > 0 && (
+              <button
+                type="button"
+                onClick={() => setRunInput(targetKm.toFixed(1))}
+                className={`px-2.5 py-1.5 rounded-lg text-xs font-mono-athletic font-extrabold border cursor-pointer ${
+                  Math.abs((parsedKm || 0) - targetKm) < 0.05
+                    ? 'border-[#CCFF00] text-black bg-[#CCFF00]'
+                    : 'border-[#CCFF00]/40 text-[#CCFF00] bg-[#CCFF00]/10 hover:bg-[#CCFF00]/20'
+                }`}
+              >
+                推奨 {targetKm.toFixed(1)}km
+              </button>
+            )}
+            {(shiftHours === 'none' ? [5, 6, 8, 10] : [1, 2, 3, 5]).map((km) => (
               <button
                 key={km}
                 type="button"

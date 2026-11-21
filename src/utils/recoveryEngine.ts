@@ -357,10 +357,12 @@ export interface ShiftConditionPlan {
 
 export function getShiftAndConditionPlan(
   shiftHours: ShiftHours,
-  conditionLevel: ConditionLevel | number | null
+  conditionLevel: ConditionLevel | number | null,
+  score: number = 50
 ): ShiftConditionPlan {
   const norm = normalizeConditionLevel(conditionLevel);
   const effectiveCond: 1 | 2 | 3 = norm ?? 2;
+  const s = Math.max(0, Math.min(100, Math.round(score)));
 
   const shiftLabel =
     shiftHours === 'none'
@@ -380,47 +382,25 @@ export function getShiftAndConditionPlan(
       ? '好調'
       : '未回答（標準）';
 
-  // 1. Recommended Running Distance (km) matrix by shiftHours x conditionLevel
-  let recommendedRunKm = 3.0;
-  let recommendedRunLabel = '推奨: 3.0 km';
+  // 1. Recommended Running Distance (km) driven by shiftHours x recoveryScore (0..100pt)
+  let recommendedRunKm = 5.0;
+  let recommendedRunLabel = '推奨: 5.0 km';
 
   if (shiftHours === 'long') {
     recommendedRunKm = 0.0;
-    recommendedRunLabel = '推奨: 0.0 km（休養・ストレッチ推奨 / 任意 0.5〜1.0 km）';
+    recommendedRunLabel = '推奨: 0.0 km（休養・ストレッチ推奨 / 任意 0.0〜1.0 km）';
   } else if (shiftHours === 'none') {
-    if (effectiveCond === 3) {
-      recommendedRunKm = 4.5;
-      recommendedRunLabel = '推奨: 4.0〜5.0 km';
-    } else if (effectiveCond === 1) {
-      recommendedRunKm = 1.5;
-      recommendedRunLabel = '推奨: 1.5 km（または休息）';
-    } else {
-      recommendedRunKm = 3.0;
-      recommendedRunLabel = '推奨: 3.0 km';
-    }
+    // Off-shift: ALWAYS >= 5.0 km, scaling up with score up to 10.0 km
+    recommendedRunKm = Math.min(10.0, Math.round((5.0 + Math.max(0, (s - 50) * 0.1)) * 10) / 10);
+    recommendedRunLabel = `推奨: ${recommendedRunKm.toFixed(1)} km`;
   } else if (shiftHours === 'short') {
-    if (effectiveCond === 3) {
-      recommendedRunKm = 2.5;
-      recommendedRunLabel = '推奨: 2.5 km';
-    } else if (effectiveCond === 1) {
-      recommendedRunKm = 0.5;
-      recommendedRunLabel = '推奨: 0.0〜1.0 km';
-    } else {
-      recommendedRunKm = 1.8;
-      recommendedRunLabel = '推奨: 1.5〜2.0 km';
-    }
+    // Short shift (~4h): 1.5 km ~ 3.5 km scaling with score
+    recommendedRunKm = Math.min(3.5, Math.max(1.5, Math.round((1.5 + (s / 100) * 2.0) * 10) / 10));
+    recommendedRunLabel = `推奨: ${recommendedRunKm.toFixed(1)} km`;
   } else {
-    // medium (4~8h)
-    if (effectiveCond === 3) {
-      recommendedRunKm = 1.5;
-      recommendedRunLabel = '推奨: 1.5 km';
-    } else if (effectiveCond === 1) {
-      recommendedRunKm = 0.0;
-      recommendedRunLabel = '推奨: 0.0 km（休養推奨）';
-    } else {
-      recommendedRunKm = 1.0;
-      recommendedRunLabel = '推奨: 0.0〜1.0 km';
-    }
+    // Medium shift (4~8h): 0.5 km ~ 2.0 km scaling with score
+    recommendedRunKm = Math.min(2.0, Math.max(0.5, Math.round((0.5 + (s / 100) * 1.5) * 10) / 10));
+    recommendedRunLabel = `推奨: ${recommendedRunKm.toFixed(1)} km`;
   }
 
   // 2. Workout Mode & Recommended / Optional Exercises
@@ -516,9 +496,10 @@ export function getShiftAndConditionPlan(
 export function generateDailyTasks(
   shiftHours: ShiftHours,
   conditionLevel: ConditionLevel | number | null,
-  hasWeightToday: boolean
+  hasWeightToday: boolean,
+  score: number = 50
 ): DailyTask[] {
-  const plan = getShiftAndConditionPlan(shiftHours, conditionLevel);
+  const plan = getShiftAndConditionPlan(shiftHours, conditionLevel, score);
   const norm = normalizeConditionLevel(conditionLevel);
   const tasks: DailyTask[] = [];
 

@@ -477,6 +477,7 @@ export function App() {
                 latestWeight={latestWeightInfo?.weight ?? null}
                 profile={appState.profile}
                 breakdown={breakdown}
+                score={displayScore}
                 onSelectCondition={handleSelectCondition}
                 onSelectShift={handleSelectShift}
                 onToggleTask={handleToggleTask}
@@ -492,6 +493,7 @@ export function App() {
             <WorkoutTab
               conditionLevel={todayRecord.conditionLevel}
               shiftHours={todayRecord.shiftHours}
+              score={displayScore}
               completedWorkouts={todayRecord.completedWorkouts}
               runningDistanceKm={todayRecord.runningDistanceKm}
               onToggleWorkout={handleToggleWorkout}

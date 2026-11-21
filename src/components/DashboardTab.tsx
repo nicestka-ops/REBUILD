@@ -29,6 +29,7 @@ interface DashboardTabProps {
   latestWeight: number | null;
   profile: UserProfile;
   breakdown: ScoreBreakdown;
+  score: number;
   onSelectCondition: (level: ConditionLevel) => void;
   onSelectShift: (shift: ShiftHours) => void;
   onToggleTask: (taskId: string) => void;
@@ -41,6 +42,7 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
   latestWeight,
   profile,
   breakdown,
+  score,
   onSelectCondition,
   onSelectShift,
   onToggleTask,
@@ -51,11 +53,12 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
 
   const normLevel = normalizeConditionLevel(todayRecord.conditionLevel);
   const isConditionMissing = normLevel === null;
-  const plan = getShiftAndConditionPlan(todayRecord.shiftHours, normLevel);
+  const plan = getShiftAndConditionPlan(todayRecord.shiftHours, normLevel, score);
   const tasks = generateDailyTasks(
     todayRecord.shiftHours,
     normLevel,
-    todayRecord.rawWeight !== null
+    todayRecord.rawWeight !== null,
+    score
   );
 
   const activeCondition = CONDITION_OPTIONS.find((c) => c.level === normLevel);
