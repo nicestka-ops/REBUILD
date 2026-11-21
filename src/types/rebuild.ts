@@ -43,6 +43,7 @@ export interface DailyRecord {
   runningDistanceKm?: number | null;
   runningRouteType?: RunningRouteType | null;
   runningToughPointsCleared?: number;
+  runningCompletedDateKey?: string | null;
   completedTasks: string[];
   completedWorkouts: WorkoutExerciseId[];
   // Reserved field for future nutrition feature

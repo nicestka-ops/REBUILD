@@ -375,6 +375,8 @@ function AppContent() {
               completedWorkouts={todayRecord.completedWorkouts}
               runningDistanceKm={todayRecord.runningDistanceKm}
               runningRouteType={todayRecord.runningRouteType}
+              runningCompletedToday={todayRecord.runningCompletedDateKey === todayKey}
+              todayKey={todayKey}
               onToggleWorkout={handleToggleWorkout}
               onSaveRunningDistance={handleSaveRunningDistance}
               onSelectShift={handleSelectShift}
@@ -411,6 +413,7 @@ function AppContent() {
               streakDays={streakDays}
               breakdown={breakdown}
               stageInfo={stageInfo}
+              score={displayScore}
               onToggleTask={handleToggleTask}
             />
           </div>

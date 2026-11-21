@@ -7,12 +7,14 @@ import {
   CheckCircle2,
   Compass,
   Flag,
+  Landmark,
   LocateFixed,
   MapPin,
   Navigation,
   Play,
   RefreshCw,
   Route,
+  Shuffle,
   Square,
   Trees,
 } from 'lucide-react';
@@ -29,10 +31,13 @@ interface RunningCourseMapProps {
   recommendedRunKm: number;
   savedDistanceKm?: number | null;
   initialRouteType?: RunningRouteType | null;
+  completedToday: boolean;
+  todayKey: string;
   onApplyRunResult: (
     km: number,
     routeType: RunningRouteType,
-    toughPointsCleared: number
+    toughPointsCleared: number,
+    markCompletedToday?: boolean
   ) => void;
 }
 
@@ -49,6 +54,8 @@ export const RunningCourseMap: React.FC<RunningCourseMapProps> = ({
   recommendedRunKm,
   savedDistanceKm,
   initialRouteType,
+  completedToday,
+  todayKey,
   onApplyRunResult,
 }) => {
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
@@ -62,13 +69,14 @@ export const RunningCourseMap: React.FC<RunningCourseMapProps> = ({
   const [routeType, setRouteType] = useState<RunningRouteType>(
     initialRouteType ?? 'round_trip'
   );
-  // Start coordinate is null until real GPS or user's manual map tap sets it (no dummy coordinates)
+  // Start coordinate is locked once set; never auto-changed unless user clicks 再取得 / 手動スタート指定
   const [startCoord, setStartCoord] = useState<[number, number] | null>(null);
+  const [courseVariantSeed, setCourseVariantSeed] = useState(0);
   const [course, setCourse] = useState<GeneratedCourse | null>(null);
   const [loadingCourse, setLoadingCourse] = useState(false);
 
   const [gpsStatus, setGpsStatus] = useState<string>(
-    '「現在地を取得」または「地図をタップ」でスタート地点を指定すると、推奨距離の安全コースを描画します。'
+    '「現在地を取得」または「手動スタート指定」で開始地点を設定すると、推奨距離の安全コースを固定描画します。'
   );
   const [gpsError, setGpsError] = useState<string | null>(null);
   const [manualPickMode, setManualPickMode] = useState(false);
@@ -82,7 +90,6 @@ export const RunningCourseMap: React.FC<RunningCourseMapProps> = ({
   // Time-to-distance fallback helper (minutes at 6:00/km pace)
   const [minutesInput, setMinutesInput] = useState('30');
   const [savedBanner, setSavedBanner] = useState(false);
-  const [isCompletedLocked, setIsCompletedLocked] = useState(false);
 
   const manualPickRef = useRef(manualPickMode);
   manualPickRef.current = manualPickMode;
@@ -120,10 +127,9 @@ export const RunningCourseMap: React.FC<RunningCourseMapProps> = ({
       const picked: [number, number] = [e.latlng.lat, e.latlng.lng];
       setStartCoord(picked);
       setActualTrack([]);
-      setIsCompletedLocked(false);
       setManualPickMode(false);
       setGpsError(null);
-      setGpsStatus('指定した地点から安全ランニングコースを生成しました。');
+      setGpsStatus('指定した地点にスタートを固定し、安全コースを生成しました。');
     });
 
     mapRef.current = map;
@@ -137,7 +143,7 @@ export const RunningCourseMap: React.FC<RunningCourseMapProps> = ({
     };
   }, []);
 
-  // Generate course whenever startCoord, recommendedRunKm, or routeType changes
+  // Generate course ONLY when startCoord, routeType, courseVariantSeed, or recommendedRunKm changes
   useEffect(() => {
     if (!startCoord) {
       setCourse(null);
@@ -149,16 +155,18 @@ export const RunningCourseMap: React.FC<RunningCourseMapProps> = ({
     setActiveEventSpot(null);
     setSimStepIdx(0);
 
-    generateSafeRunningCourse(startCoord, recommendedRunKm, routeType).then((generated) => {
-      if (cancelled) return;
-      setCourse(generated);
-      setLoadingCourse(false);
-    });
+    generateSafeRunningCourse(startCoord, recommendedRunKm, routeType, courseVariantSeed).then(
+      (generated) => {
+        if (cancelled) return;
+        setCourse(generated);
+        setLoadingCourse(false);
+      }
+    );
 
     return () => {
       cancelled = true;
     };
-  }, [startCoord?.[0], startCoord?.[1], recommendedRunKm, routeType]);
+  }, [startCoord?.[0], startCoord?.[1], recommendedRunKm, routeType, courseVariantSeed]);
 
   // Render planned course polyline & markers onto Leaflet
   useEffect(() => {
@@ -180,10 +188,10 @@ export const RunningCourseMap: React.FC<RunningCourseMapProps> = ({
     L.marker(course.coordinates[0], {
       icon: makeBadgeIcon('START', '#FFFFFF', '#CCFF00', '#111214'),
     })
-      .bindPopup('スタート地点')
+      .bindPopup('スタート地点（固定）')
       .addTo(markersLayer);
 
-    // Course spots (scenic, tough, turnaround, goal)
+    // Course spots (landmark, scenic, monument, tough, turnaround, goal)
     course.spots.forEach((spot) => {
       const isCleared = clearedSpotIds.includes(spot.id);
       let icon: L.DivIcon;
@@ -198,9 +206,23 @@ export const RunningCourseMap: React.FC<RunningCourseMapProps> = ({
         icon = makeBadgeIcon('折り返し', '#FFD600', '#111214', '#111214');
       } else if (spot.type === 'goal') {
         icon = makeBadgeIcon('🏁 GOAL', '#CCFF00', '#111214', '#111214');
+      } else if (spot.type === 'monument') {
+        icon = makeBadgeIcon(
+          isCleared ? '✓ 銅像' : '🗿 銅像',
+          '#00F0FF',
+          '#111214',
+          '#111214'
+        );
+      } else if (spot.type === 'landmark') {
+        icon = makeBadgeIcon(
+          isCleared ? '✓ 観光' : '🏛️ 観光',
+          '#00F0FF',
+          '#111214',
+          '#111214'
+        );
       } else {
         icon = makeBadgeIcon(
-          isCleared ? '✓ 見物' : '🌿 見物',
+          isCleared ? '✓ 景色' : '🌳 景色',
           '#00F0FF',
           '#111214',
           '#111214'
@@ -264,8 +286,7 @@ export const RunningCourseMap: React.FC<RunningCourseMapProps> = ({
         const next: [number, number] = [pos.coords.latitude, pos.coords.longitude];
         setStartCoord(next);
         setActualTrack([next]);
-        setIsCompletedLocked(false);
-        setGpsStatus('現在地を取得し、安全ランニングコースを描画しました。');
+        setGpsStatus('現在地を固定し、安全コースを描画しました（再取得またはコース再考まで経路を保持します）。');
       },
       () => {
         setGpsError(
@@ -293,16 +314,16 @@ export const RunningCourseMap: React.FC<RunningCourseMapProps> = ({
     }
 
     setGpsError(null);
-    setIsCompletedLocked(false);
     setIsTracking(true);
     if (startCoord) {
       setActualTrack((prev) => (prev.length > 0 ? prev : [startCoord]));
     }
-    setGpsStatus('GPSトラッキング中… 実際の走行軌跡を黄緑ラインで描画します。');
+    setGpsStatus('GPSトラッキング中… 固定された計画ルートに対して実走行軌跡を黄緑ラインで描画します。');
 
     watchIdRef.current = navigator.geolocation.watchPosition(
       (pos) => {
         const next: [number, number] = [pos.coords.latitude, pos.coords.longitude];
+        // Keep startCoord locked if already set; only initialize once if null
         setStartCoord((prev) => prev ?? next);
         setActualTrack((prev) => [...prev, next]);
         evaluateSpotProximity(next);
@@ -315,9 +336,15 @@ export const RunningCourseMap: React.FC<RunningCourseMapProps> = ({
     );
   };
 
+  const handleReconsiderCourse = () => {
+    if (!startCoord) return;
+    setCourseVariantSeed((s) => s + 1);
+    setActualTrack([]);
+    setGpsStatus('別の方角・経由地で新しい安全コースを再生成しました。');
+  };
+
   const handleSimulateStep = () => {
     if (!course || course.coordinates.length < 2) return;
-    setIsCompletedLocked(false);
     const nextIdx = Math.min(
       course.coordinates.length - 1,
       simStepIdx + Math.ceil(course.coordinates.length / 5)
@@ -341,18 +368,15 @@ export const RunningCourseMap: React.FC<RunningCourseMapProps> = ({
       ? Math.round((parsedMinutes / 6) * 10) / 10
       : 0;
 
-  // When completing the course, auto-reflect GPS tracked distance if >= 0.1km, otherwise planned/recommended course distance
   const courseCompletionKm = trackedKm >= 0.1 ? trackedKm : plannedKm;
   const effectiveRunKm = trackedKm >= 0.1 ? trackedKm : savedDistanceKm ?? 0;
   const isPlannedGoalMet = effectiveRunKm >= plannedKm;
 
-  const commitDistance = (km: number, lockCompletion: boolean = false) => {
+  const commitDistance = (km: number, markCompletedToday: boolean = false) => {
     if (km <= 0) return;
-    onApplyRunResult(km, routeType, toughClearedCount);
+    if (markCompletedToday && completedToday) return;
+    onApplyRunResult(km, routeType, toughClearedCount, markCompletedToday);
     setSavedBanner(true);
-    if (lockCompletion) {
-      setIsCompletedLocked(true);
-    }
     window.setTimeout(() => setSavedBanner(false), 2200);
   };
 
@@ -393,7 +417,7 @@ export const RunningCourseMap: React.FC<RunningCourseMapProps> = ({
         </div>
       </div>
 
-      {/* GPS & Manual Start Controls */}
+      {/* GPS, Course Reconsider & Manual Start Controls */}
       <div className="flex flex-wrap items-center gap-1.5">
         <button
           type="button"
@@ -401,8 +425,19 @@ export const RunningCourseMap: React.FC<RunningCourseMapProps> = ({
           className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-[#111214] border border-[#2C2F36] text-[11px] font-bold text-white hover:border-[#CCFF00]/60 cursor-pointer"
         >
           <LocateFixed className="w-3.5 h-3.5 text-[#CCFF00]" />
-          <span>現在地を取得</span>
+          <span>{startCoord ? '現在地を再取得' : '現在地を取得'}</span>
         </button>
+
+        {startCoord && (
+          <button
+            type="button"
+            onClick={handleReconsiderCourse}
+            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-[#111214] border border-[#00F0FF]/50 text-[11px] font-extrabold text-[#00F0FF] hover:bg-[#00F0FF]/10 cursor-pointer"
+          >
+            <Shuffle className="w-3.5 h-3.5" />
+            <span>コース再考</span>
+          </button>
+        )}
 
         <button
           type="button"
@@ -462,7 +497,7 @@ export const RunningCourseMap: React.FC<RunningCourseMapProps> = ({
         {loadingCourse && (
           <div className="absolute top-2 right-2 z-10 px-2.5 py-1 rounded-lg bg-[#111214]/90 border border-[#2C2F36] text-[10px] font-bold text-[#CCFF00] flex items-center gap-1">
             <RefreshCw className="w-3 h-3 animate-spin" />
-            <span>コース計算中...</span>
+            <span>ルート・標高解析中...</span>
           </div>
         )}
       </div>
@@ -508,6 +543,8 @@ export const RunningCourseMap: React.FC<RunningCourseMapProps> = ({
             <Flag className="w-4 h-4 text-[#CCFF00] shrink-0 mt-0.5" />
           ) : activeEventSpot.type === 'turnaround' ? (
             <Compass className="w-4 h-4 text-[#FFD600] shrink-0 mt-0.5" />
+          ) : activeEventSpot.type === 'landmark' || activeEventSpot.type === 'monument' ? (
+            <Landmark className="w-4 h-4 text-[#00F0FF] shrink-0 mt-0.5" />
           ) : (
             <Trees className="w-4 h-4 text-[#00F0FF] shrink-0 mt-0.5" />
           )}
@@ -526,11 +563,16 @@ export const RunningCourseMap: React.FC<RunningCourseMapProps> = ({
         </div>
       )}
 
-      {/* Course Spots List */}
+      {/* Course Spots List (concrete categories + evidence-based tough point) */}
       {course && (
         <div className="space-y-1.5">
-          <div className="text-[11px] font-bold text-[#8E929B]">
-            コース上の見物スポット・きついポイント（タップで詳細表示）
+          <div className="flex items-center justify-between text-[11px] font-bold text-[#8E929B]">
+            <span>コース上のスポット・きついポイント（タップで詳細表示）</span>
+            {course.elevationGainM > 0 && (
+              <span className="font-mono-athletic text-[#CCFF00]">
+                獲得標高 +{course.elevationGainM}m
+              </span>
+            )}
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
             {course.spots.map((spot) => {
@@ -559,7 +601,7 @@ export const RunningCourseMap: React.FC<RunningCourseMapProps> = ({
         </div>
       )}
 
-      {/* GPS / Time-Converted Distance Save Bar + Course Complete Button */}
+      {/* Time-Converted Save + Once-Per-JST-Day Course Complete Button */}
       <div className="space-y-2.5 pt-2 border-t border-[#2C2F36]">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-1.5 text-[11px]">
@@ -587,20 +629,18 @@ export const RunningCourseMap: React.FC<RunningCourseMapProps> = ({
           </button>
         </div>
 
-        {/* Prominent Course Complete & Confirm Button (auto-reflects course/planned distance) */}
-        {isCompletedLocked ? (
-          <div className="w-full rounded-xl bg-[#CCFF00]/15 border border-[#CCFF00]/60 px-4 py-3 flex items-center justify-between gap-2">
+        {/* Once-per-JST-day Complete & Confirm Button */}
+        {completedToday ? (
+          <div className="w-full rounded-xl bg-[#CCFF00]/15 border border-[#CCFF00]/60 px-4 py-3 flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-2 text-xs font-extrabold text-[#CCFF00]">
               <CheckCircle2 className="w-4 h-4 shrink-0" />
-              <span>ランニング完了・記録を確定しました！（スコア＆推移に反映済み）</span>
+              <span>
+                本日のランニング達成済み（JST {todayKey.slice(5)} ・ 1日1回）
+              </span>
             </div>
-            <button
-              type="button"
-              onClick={() => setIsCompletedLocked(false)}
-              className="text-[10px] font-bold text-[#8E929B] hover:text-white underline shrink-0 cursor-pointer"
-            >
-              再記録
-            </button>
+            <span className="font-mono-athletic text-xs font-black text-white">
+              実績: {(savedDistanceKm ?? courseCompletionKm).toFixed(1)} km
+            </span>
           </div>
         ) : (
           <button
@@ -615,8 +655,8 @@ export const RunningCourseMap: React.FC<RunningCourseMapProps> = ({
             <CheckCircle2 className="w-4 h-4" />
             <span>
               {isPlannedGoalMet
-                ? `計画距離達成！完了して記録 (${effectiveRunKm.toFixed(1)}km)`
-                : `完了（記録を確定） (${courseCompletionKm.toFixed(1)}km)`}
+                ? `計画距離達成！完了して記録 (実績: ${effectiveRunKm.toFixed(1)}km)`
+                : `完了（記録を確定） (実績: ${courseCompletionKm.toFixed(1)}km)`}
             </span>
           </button>
         )}

@@ -19,6 +19,7 @@ export function createEmptyDailyRecord(
     runningDistanceKm: null,
     runningRouteType: null,
     runningToughPointsCleared: 0,
+    runningCompletedDateKey: null,
     completedTasks: [],
     completedWorkouts: [],
     nutritionReserved: null,

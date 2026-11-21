@@ -21,11 +21,14 @@ interface WorkoutTabProps {
   completedWorkouts: WorkoutExerciseId[];
   runningDistanceKm: number | null | undefined;
   runningRouteType?: RunningRouteType | null;
+  runningCompletedToday: boolean;
+  todayKey: string;
   onToggleWorkout: (id: WorkoutExerciseId) => void;
   onSaveRunningDistance: (
     km: number,
     routeType?: RunningRouteType,
-    toughPointsCleared?: number
+    toughPointsCleared?: number,
+    markCompletedToday?: boolean
   ) => void;
   onSelectShift?: (shift: ShiftHours) => void;
 }
@@ -185,6 +188,8 @@ export const WorkoutTab: React.FC<WorkoutTabProps> = ({
   completedWorkouts,
   runningDistanceKm,
   runningRouteType,
+  runningCompletedToday,
+  todayKey,
   onToggleWorkout,
   onSaveRunningDistance,
   onSelectShift,
@@ -482,14 +487,16 @@ export const WorkoutTab: React.FC<WorkoutTabProps> = ({
         </div>
       </div>
 
-      {/* GPS Safe Running Course Map (往復 / 片道, 見物スポット, きついポイント) */}
+      {/* GPS Safe Running Course Map (往復 / 片道, 具体的スポット, 標高根拠付ききついポイント) */}
       <RunningCourseMap
         recommendedRunKm={plan.recommendedRunKm}
         savedDistanceKm={runningDistanceKm}
         initialRouteType={runningRouteType}
-        onApplyRunResult={(km, rt, toughCleared) => {
+        completedToday={runningCompletedToday}
+        todayKey={todayKey}
+        onApplyRunResult={(km, rt, toughCleared, markCompletedToday) => {
           setRunInput(km.toFixed(1));
-          onSaveRunningDistance(km, rt, toughCleared);
+          onSaveRunningDistance(km, rt, toughCleared, markCompletedToday);
         }}
       />
 

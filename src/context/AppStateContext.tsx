@@ -47,7 +47,8 @@ interface AppStateContextValue {
   saveRunningDistance: (
     km: number,
     routeType?: RunningRouteType,
-    toughPointsCleared?: number
+    toughPointsCleared?: number,
+    markCompletedToday?: boolean
   ) => void;
   saveWeight: (rawWeight: number, timing: WeightTiming) => void;
   updateProfile: (nextProfile: UserProfile) => void;
@@ -140,11 +141,25 @@ export const AppStateProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   );
 
   const saveRunningDistance = useCallback(
-    (km: number, routeType?: RunningRouteType, toughPointsCleared?: number) => {
+    (
+      km: number,
+      routeType?: RunningRouteType,
+      toughPointsCleared?: number,
+      markCompletedToday?: boolean
+    ) => {
       updateTodayRecord((rec) => {
         const nextWorkouts = [...rec.completedWorkouts];
         if (km > 0 && !nextWorkouts.includes('running_jog') && !nextWorkouts.includes('running_goal')) {
           nextWorkouts.push('running_jog');
+        }
+        const nextTasks = [...rec.completedTasks];
+        if (markCompletedToday) {
+          // Sync running-related daily tasks across Home, Daily, and Workout
+          for (const taskId of ['task_run_goal', 'task_light_move']) {
+            if (!nextTasks.includes(taskId)) {
+              nextTasks.push(taskId);
+            }
+          }
         }
         return {
           ...rec,
@@ -154,11 +169,15 @@ export const AppStateProvider: React.FC<{ children: React.ReactNode }> = ({ chil
             toughPointsCleared !== undefined
               ? Math.max(rec.runningToughPointsCleared ?? 0, toughPointsCleared)
               : rec.runningToughPointsCleared ?? 0,
+          runningCompletedDateKey: markCompletedToday
+            ? todayKey
+            : rec.runningCompletedDateKey ?? null,
           completedWorkouts: nextWorkouts,
+          completedTasks: nextTasks,
         };
       });
     },
-    [updateTodayRecord]
+    [updateTodayRecord, todayKey]
   );
 
   const saveWeight = useCallback(

@@ -8,6 +8,7 @@ interface DailyTabProps {
   streakDays: number;
   breakdown: ScoreBreakdown;
   stageInfo: StageInfo;
+  score: number;
   onToggleTask: (taskId: string) => void;
 }
 
@@ -16,13 +17,15 @@ export const DailyTab: React.FC<DailyTabProps> = ({
   streakDays,
   breakdown,
   stageInfo,
+  score,
   onToggleTask,
 }) => {
   const normLevel = normalizeConditionLevel(todayRecord.conditionLevel);
   const tasks = generateDailyTasks(
     todayRecord.shiftHours,
     normLevel,
-    todayRecord.rawWeight !== null
+    todayRecord.rawWeight !== null,
+    score
   );
 
   const completedCount = tasks.filter((t) =>

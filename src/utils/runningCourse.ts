@@ -1,10 +1,11 @@
 import { RunningRouteType } from '../types/rebuild';
 
-export type CoursePointType = 'scenic' | 'tough' | 'turnaround' | 'goal';
+export type CoursePointType = 'landmark' | 'scenic' | 'monument' | 'tough' | 'turnaround' | 'goal';
 
 export interface CourseSpot {
   id: string;
   type: CoursePointType;
+  categoryLabel: string;
   name: string;
   note: string;
   lat: number;
@@ -14,8 +15,10 @@ export interface CourseSpot {
 
 export interface GeneratedCourse {
   routeType: RunningRouteType;
+  variantSeed: number;
   targetDistanceKm: number;
   plannedDistanceKm: number;
+  elevationGainM: number;
   coordinates: [number, number][];
   spots: CourseSpot[];
   source: 'osrm' | 'safe-fallback';
@@ -97,33 +100,35 @@ function getCoordAtFraction(
 function buildFallbackCoordinates(
   start: [number, number],
   targetKm: number,
-  routeType: RunningRouteType
+  routeType: RunningRouteType,
+  variantSeed: number
 ): [number, number][] {
   const [lat0, lng0] = start;
   const steps = 16;
+  const baseBearing = (35 + variantSeed * 73) % 360;
+  const dirSign = variantSeed % 2 === 0 ? 1 : -1;
 
   if (routeType === 'round_trip') {
-    // Outbound half-distance + return along parallel safe park/riverside arc
+    // Outbound path + DIFFERENT return road/loop back to the exact start point
     const halfKm = targetKm / 2;
     const rawCoords: [number, number][] = [start];
-    const baseBearing = 42;
 
     for (let i = 1; i <= steps; i++) {
       const t = i / steps;
-      const sway = Math.sin(t * Math.PI) * 14;
+      const sway = Math.sin(t * Math.PI) * 26 * dirSign;
       rawCoords.push(offsetCoord(lat0, lng0, baseBearing + sway, halfKm * t));
     }
 
     const turnaround = rawCoords[rawCoords.length - 1];
     for (let i = 1; i <= steps; i++) {
       const t = i / steps;
-      const sway = Math.sin(t * Math.PI) * 18;
-      const backBearing = baseBearing + 180 - sway;
+      // Distinct return arc on the opposite side so outbound and return use different paths
+      const returnSway = Math.sin(t * Math.PI) * 32 * dirSign;
+      const backBearing = baseBearing + 180 + returnSway;
       rawCoords.push(offsetCoord(turnaround[0], turnaround[1], backBearing, halfKm * t));
     }
     rawCoords[rawCoords.length - 1] = start;
 
-    // Fine-scale around start so total Haversine matches targetKm closely
     const rawTotal = computePathDistanceKm(rawCoords);
     if (rawTotal > 0.05) {
       const scale = targetKm / rawTotal;
@@ -135,12 +140,11 @@ function buildFallbackCoordinates(
     return rawCoords;
   }
 
-  // One-way gentle scenic curve toward targetKm
+  // One-way gentle scenic curve rotated by variantSeed
   const rawCoords: [number, number][] = [start];
-  const baseBearing = 65;
   for (let i = 1; i <= steps * 2; i++) {
     const t = i / (steps * 2);
-    const sway = Math.sin(t * Math.PI * 1.5) * 15;
+    const sway = Math.sin(t * Math.PI * 1.5) * 20 * dirSign;
     rawCoords.push(offsetCoord(lat0, lng0, baseBearing + sway, targetKm * t));
   }
   const rawTotal = computePathDistanceKm(rawCoords);
@@ -154,22 +158,165 @@ function buildFallbackCoordinates(
   return rawCoords;
 }
 
-function buildCourseSpots(
+interface OverpassPoi {
+  lat: number;
+  lng: number;
+  name: string;
+  type: 'landmark' | 'scenic' | 'monument';
+  categoryLabel: string;
+}
+
+async function fetchNearbyOverpassPois(
+  center: [number, number],
+  radiusM: number
+): Promise<OverpassPoi[]> {
+  try {
+    const controller = new AbortController();
+    const tid = window.setTimeout(() => controller.abort(), 2800);
+    const r = Math.min(2500, Math.max(600, Math.round(radiusM)));
+    const query = `[out:json][timeout:3];(node["tourism"~"attraction|artwork|viewpoint"]["name"](around:${r},${center[0]},${center[1]});node["historic"~"monument|memorial"]["name"](around:${r},${center[0]},${center[1]});node["leisure"~"park|garden"]["name"](around:${r},${center[0]},${center[1]}););out body 12;`;
+    const res = await fetch(
+      `https://overpass-api.de/api/interpreter?data=${encodeURIComponent(query)}`,
+      { signal: controller.signal }
+    );
+    window.clearTimeout(tid);
+    if (!res.ok) return [];
+    const data = (await res.json()) as {
+      elements?: { lat?: number; lon?: number; tags?: Record<string, string> }[];
+    };
+    const pois: OverpassPoi[] = [];
+    for (const el of data.elements ?? []) {
+      if (typeof el.lat !== 'number' || typeof el.lon !== 'number' || !el.tags?.name) continue;
+      const tags = el.tags;
+      if (tags.historic === 'monument' || tags.historic === 'memorial' || tags.tourism === 'artwork') {
+        pois.push({
+          lat: el.lat,
+          lng: el.lon,
+          name: tags.name,
+          type: 'monument',
+          categoryLabel: '銅像・モニュメント',
+        });
+      } else if (tags.tourism === 'viewpoint' || tags.leisure === 'park' || tags.leisure === 'garden') {
+        pois.push({
+          lat: el.lat,
+          lng: el.lon,
+          name: tags.name,
+          type: 'scenic',
+          categoryLabel: tags.tourism === 'viewpoint' ? '景色・展望' : '公園・緑地',
+        });
+      } else {
+        pois.push({
+          lat: el.lat,
+          lng: el.lon,
+          name: tags.name,
+          type: 'landmark',
+          categoryLabel: '観光・珍しいスポット',
+        });
+      }
+    }
+    return pois;
+  } catch {
+    return [];
+  }
+}
+
+interface ElevationAnalysis {
+  elevationGainM: number;
+  steepestCoord: [number, number] | null;
+  steepestGradePct: number;
+  steepestGainM: number;
+  steepestDistKm: number;
+}
+
+async function analyzeRouteElevation(
+  coords: [number, number][]
+): Promise<ElevationAnalysis> {
+  const sampleCount = Math.min(10, Math.max(4, coords.length));
+  const sampled: { coord: [number, number]; distanceKm: number }[] = [];
+  for (let i = 0; i < sampleCount; i++) {
+    const frac = i / (sampleCount - 1);
+    sampled.push(getCoordAtFraction(coords, frac));
+  }
+
+  try {
+    const controller = new AbortController();
+    const tid = window.setTimeout(() => controller.abort(), 2500);
+    const lats = sampled.map((s) => s.coord[0].toFixed(5)).join(',');
+    const lngs = sampled.map((s) => s.coord[1].toFixed(5)).join(',');
+    const res = await fetch(
+      `https://api.open-meteo.com/v1/elevation?latitude=${lats}&longitude=${lngs}`,
+      { signal: controller.signal }
+    );
+    window.clearTimeout(tid);
+    if (!res.ok) throw new Error('elevation fetch failed');
+    const json = (await res.json()) as { elevation?: number[] };
+    const elevs = json.elevation;
+    if (!elevs || elevs.length !== sampled.length) throw new Error('invalid elevation');
+
+    let totalGain = 0;
+    let maxGrade = 0;
+    let maxSegGain = 0;
+    let steepestIdx = -1;
+
+    for (let i = 1; i < elevs.length; i++) {
+      const diffM = elevs[i] - elevs[i - 1];
+      if (diffM > 0) totalGain += diffM;
+      const segKm = Math.max(0.05, sampled[i].distanceKm - sampled[i - 1].distanceKm);
+      const gradePct = (diffM / (segKm * 1000)) * 100;
+      if (gradePct > maxGrade) {
+        maxGrade = gradePct;
+        maxSegGain = Math.max(0, Math.round(diffM));
+        steepestIdx = i;
+      }
+    }
+
+    return {
+      elevationGainM: Math.round(totalGain),
+      steepestCoord: steepestIdx >= 0 ? sampled[steepestIdx].coord : null,
+      steepestGradePct: Math.round(maxGrade * 10) / 10,
+      steepestGainM: maxSegGain,
+      steepestDistKm: steepestIdx >= 0 ? sampled[steepestIdx].distanceKm : 0,
+    };
+  } catch {
+    return {
+      elevationGainM: 0,
+      steepestCoord: null,
+      steepestGradePct: 0,
+      steepestGainM: 0,
+      steepestDistKm: 0,
+    };
+  }
+}
+
+async function buildCourseSpots(
   coords: [number, number][],
-  routeType: RunningRouteType
-): CourseSpot[] {
+  routeType: RunningRouteType,
+  totalKm: number
+): Promise<{ spots: CourseSpot[]; elevationGainM: number }> {
   const scenic1 = getCoordAtFraction(coords, 0.25);
   const mid = getCoordAtFraction(coords, 0.5);
-  const tough = getCoordAtFraction(coords, routeType === 'round_trip' ? 0.68 : 0.65);
   const scenic2 = getCoordAtFraction(coords, 0.84);
   const end = getCoordAtFraction(coords, 1.0);
 
+  const [pois, elev] = await Promise.all([
+    fetchNearbyOverpassPois(mid.coord, Math.min(2000, Math.max(800, totalKm * 350))),
+    analyzeRouteElevation(coords),
+  ]);
+
+  const spot1Poi = pois[0];
+  const spot2Poi = pois[1];
+
   const spots: CourseSpot[] = [
     {
-      id: 'spot_scenic_1',
-      type: 'scenic',
-      name: '見物スポット：緑道・リフレッシュポイント',
-      note: '信号の少ない緑道エリア。肩の力を抜いてリズムを整えよう！',
+      id: 'spot_poi_1',
+      type: spot1Poi?.type ?? 'scenic',
+      categoryLabel: spot1Poi?.categoryLabel ?? '景色・街並み',
+      name: spot1Poi
+        ? `${spot1Poi.categoryLabel}：${spot1Poi.name}`
+        : '景色・水辺リフレッシュ地点',
+      note: spot1Poi
+        ? `周辺スポット「${spot1Poi.name}」付近を通過。視線を上げてリラックス！`
+        : '見通しの良い景観エリア。呼吸を整えて序盤のペースを安定させよう。',
       lat: scenic1.coord[0],
       lng: scenic1.coord[1],
       distanceKmFromStart: scenic1.distanceKm,
@@ -180,39 +327,62 @@ function buildCourseSpots(
     spots.push({
       id: 'spot_turnaround',
       type: 'turnaround',
-      name: '折り返しポイント（折り返し折半地点）',
-      note: '往路クリア！ここからスタート地点へ戻る復路スタート。',
+      categoryLabel: '折り返し',
+      name: '折り返しポイント（別ルート復路へ）',
+      note: '往路クリア！帰り道は行きと異なるルートを通ってスタート地点へ戻ります。',
       lat: mid.coord[0],
       lng: mid.coord[1],
       distanceKmFromStart: mid.distanceKm,
     });
   } else {
     spots.push({
-      id: 'spot_scenic_mid',
-      type: 'scenic',
-      name: '見物スポット：川沿いビュー・中間チェック',
-      note: '見晴らしの良い直線区間。呼吸を深くして後半へ！',
+      id: 'spot_poi_mid',
+      type: spot2Poi?.type ?? 'monument',
+      categoryLabel: spot2Poi?.categoryLabel ?? '銅像・モニュメント',
+      name: spot2Poi
+        ? `${spot2Poi.categoryLabel}：${spot2Poi.name}`
+        : '銅像・街角ランドマーク通過点',
+      note: spot2Poi
+        ? `中間チェック「${spot2Poi.name}」を通過。フォームを意識して後半へ！`
+        : '中間地点のランドマーク・モニュメント付近。給水や姿勢リセットの目安に。',
       lat: mid.coord[0],
       lng: mid.coord[1],
       distanceKmFromStart: mid.distanceKm,
     });
   }
 
+  // Evidence-based Tough Point (Elevation grade OR second-half endurance push zone)
+  const hasRealClimb = elev.steepestCoord !== null && elev.steepestGradePct >= 0.8;
+  const fallbackTough = getCoordAtFraction(coords, routeType === 'round_trip' ? 0.68 : 0.7);
+  const toughCoord = hasRealClimb && elev.steepestCoord ? elev.steepestCoord : fallbackTough.coord;
+  const toughDist = hasRealClimb ? elev.steepestDistKm : fallbackTough.distanceKm;
+
   spots.push({
     id: 'spot_tough_1',
     type: 'tough',
-    name: '⚠️ きついポイント：登り坂・後半ペース維持',
-    note: 'コース最大の踏ん張りどころ！腕振りを意識してクリアするとボーナス獲得。',
-    lat: tough.coord[0],
-    lng: tough.coord[1],
-    distanceKmFromStart: tough.distanceKm,
+    categoryLabel: '高負荷区間',
+    name: hasRealClimb
+      ? `⚠️ きついポイント：上り坂区間（勾配 +${elev.steepestGradePct}% / +${elev.steepestGainM}m）`
+      : `⚠️ きついポイント：後半負荷区間（${toughDist.toFixed(1)}km地点）`,
+    note: hasRealClimb
+      ? `標高データ解析によりルート最大の登り勾配（+${elev.steepestGradePct}%、総獲得標高 ${elev.elevationGainM}m）を検出。腕振りを強めて突破するとボーナス！`
+      : `平坦ルートのため後半 ${Math.round((toughDist / Math.max(0.5, totalKm)) * 100)}% 地点の持久負荷ゾーンを選定。ペース維持で突破するとボーナス！`,
+    lat: toughCoord[0],
+    lng: toughCoord[1],
+    distanceKmFromStart: toughDist,
   });
 
+  const spot3Poi = pois[2] ?? (routeType === 'round_trip' ? pois[1] : undefined);
   spots.push({
-    id: 'spot_scenic_2',
-    type: 'scenic',
-    name: '見物スポット：公園ベンチ・クールダウン手前',
-    note: 'ゴールまであと少し！景色を楽しみながらフォームを維持。',
+    id: 'spot_poi_2',
+    type: spot3Poi?.type ?? 'landmark',
+    categoryLabel: spot3Poi?.categoryLabel ?? '観光・公園',
+    name: spot3Poi
+      ? `${spot3Poi.categoryLabel}：${spot3Poi.name}`
+      : '公園・珍しい街角スポット',
+    note: spot3Poi
+      ? `終盤の目印「${spot3Poi.name}」を通過。ゴールまであと少し！`
+      : '公園・並木道を通る終盤エリア。景色を楽しみながらラストスパート！',
     lat: scenic2.coord[0],
     lng: scenic2.coord[1],
     distanceKmFromStart: scenic2.distanceKm,
@@ -222,6 +392,7 @@ function buildCourseSpots(
     spots.push({
       id: 'spot_goal',
       type: 'goal',
+      categoryLabel: 'ゴール',
       name: '🏁 ゴール地点（片道フィニッシュ）',
       note: '目標距離走破！ストレッチでクールダウンしよう。',
       lat: end.coord[0],
@@ -230,27 +401,32 @@ function buildCourseSpots(
     });
   }
 
-  return spots;
+  return { spots, elevationGainM: elev.elevationGainM };
 }
 
 export async function generateSafeRunningCourse(
   start: [number, number],
   targetKm: number,
-  routeType: RunningRouteType
+  routeType: RunningRouteType,
+  variantSeed: number = 0
 ): Promise<GeneratedCourse> {
   const effectiveKm = Math.max(1.0, Math.round(targetKm * 10) / 10);
+  const bearing1 = (40 + variantSeed * 73) % 360;
+  const loopSpread = variantSeed % 2 === 0 ? 48 : -48;
 
-  // Attempt OSRM pedestrian routing first (falls back cleanly if offline/blocked)
+  // Attempt OSRM pedestrian routing first (with 2 distinct waypoints for round_trip so return uses a different road)
   try {
     const controller = new AbortController();
     const timeoutId = window.setTimeout(() => controller.abort(), 3500);
 
     let url = '';
     if (routeType === 'round_trip') {
-      const wp = offsetCoord(start[0], start[1], 45, Math.max(0.4, effectiveKm / 2.6));
-      url = `https://router.project-osrm.org/route/v1/foot/${start[1]},${start[0]};${wp[1]},${wp[0]};${start[1]},${start[0]}?overview=full&geometries=geojson`;
+      const legKm = Math.max(0.35, effectiveKm / 3.1);
+      const wp1 = offsetCoord(start[0], start[1], bearing1, legKm);
+      const wp2 = offsetCoord(start[0], start[1], (bearing1 + loopSpread + 360) % 360, legKm);
+      url = `https://router.project-osrm.org/route/v1/foot/${start[1]},${start[0]};${wp1[1]},${wp1[0]};${wp2[1]},${wp2[0]};${start[1]},${start[0]}?overview=full&geometries=geojson`;
     } else {
-      const dest = offsetCoord(start[0], start[1], 65, Math.max(0.6, effectiveKm / 1.3));
+      const dest = offsetCoord(start[0], start[1], bearing1, Math.max(0.6, effectiveKm / 1.3));
       url = `https://router.project-osrm.org/route/v1/foot/${start[1]},${start[0]};${dest[1]},${dest[0]}?overview=full&geometries=geojson`;
     }
 
@@ -264,13 +440,23 @@ export async function generateSafeRunningCourse(
       const raw = json.routes?.[0]?.geometry?.coordinates;
       if (raw && raw.length >= 4) {
         const coords: [number, number][] = raw.map(([lng, lat]) => [lat, lng]);
+        if (routeType === 'round_trip') {
+          coords[coords.length - 1] = coords[0];
+        }
         const plannedDistanceKm = computePathDistanceKm(coords);
+        const { spots, elevationGainM } = await buildCourseSpots(
+          coords,
+          routeType,
+          plannedDistanceKm
+        );
         return {
           routeType,
+          variantSeed,
           targetDistanceKm: effectiveKm,
           plannedDistanceKm,
+          elevationGainM,
           coordinates: coords,
-          spots: buildCourseSpots(coords, routeType),
+          spots,
           source: 'osrm',
         };
       }
@@ -279,15 +465,22 @@ export async function generateSafeRunningCourse(
     // Fallback to deterministic safe pedestrian loop/curve below
   }
 
-  const fallbackCoords = buildFallbackCoordinates(start, effectiveKm, routeType);
+  const fallbackCoords = buildFallbackCoordinates(start, effectiveKm, routeType, variantSeed);
   const plannedDistanceKm = computePathDistanceKm(fallbackCoords);
+  const { spots, elevationGainM } = await buildCourseSpots(
+    fallbackCoords,
+    routeType,
+    plannedDistanceKm
+  );
 
   return {
     routeType,
+    variantSeed,
     targetDistanceKm: effectiveKm,
     plannedDistanceKm,
+    elevationGainM,
     coordinates: fallbackCoords,
-    spots: buildCourseSpots(fallbackCoords, routeType),
+    spots,
     source: 'safe-fallback',
   };
 }
