@@ -23,7 +23,7 @@ export type WorkoutExerciseId =
   | 'running_jog'
   | 'running_goal';
 
-export type TabId = 'home' | 'workout' | 'weight' | 'trend' | 'daily';
+export type TabId = 'home' | 'workout' | 'spot' | 'trend' | 'daily';
 
 export interface DailyTask {
   id: string;

@@ -166,6 +166,18 @@ export const RunnerCanvas: React.FC<RunnerCanvasProps> = ({
     ensurePlay();
     const rafId = window.requestAnimationFrame(ensurePlay);
 
+    // Background retry if initial autoplay is delayed by browser media decode
+    let retries = 0;
+    const retryId = window.setInterval(() => {
+      retries += 1;
+      const vid = videoRefs.current[activeCfg.key];
+      if (!vid || !vid.paused || retries >= 12) {
+        window.clearInterval(retryId);
+        return;
+      }
+      ensurePlay();
+    }, 400);
+
     const onVisible = () => {
       if (document.visibilityState === 'visible') {
         ensurePlay();
@@ -176,6 +188,7 @@ export const RunnerCanvas: React.FC<RunnerCanvasProps> = ({
 
     return () => {
       window.cancelAnimationFrame(rafId);
+      window.clearInterval(retryId);
       document.removeEventListener('visibilitychange', onVisible);
       window.removeEventListener('focus', ensurePlay);
     };
@@ -229,6 +242,8 @@ export const RunnerCanvas: React.FC<RunnerCanvasProps> = ({
                 loop
                 muted
                 playsInline
+                controls={false}
+                disablePictureInPicture
                 preload="auto"
                 onLoadedData={(e) => {
                   const vid = e.currentTarget;

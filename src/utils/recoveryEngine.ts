@@ -497,7 +497,7 @@ export function getShiftAndConditionPlan(
 export function generateDailyTasks(
   shiftHours: ShiftHours,
   conditionLevel: ConditionLevel | number | null,
-  hasWeightToday: boolean,
+  _hasWeightToday: boolean,
   score: number = 50
 ): DailyTask[] {
   const plan = getShiftAndConditionPlan(shiftHours, conditionLevel, score);
@@ -514,66 +514,27 @@ export function generateDailyTasks(
       subtitle: `${plan.recommendedRunLabel}｜疲労日は減点なし・ストレッチ1つで継続`,
       category: 'recovery',
     });
-    tasks.push({
-      id: 'task_sleep',
-      title: '23:30までに就寝（7h+睡眠確保）',
-      subtitle: '成長ホルモン分泌と疲労リセットを最優先',
-      category: 'sleep',
-    });
-    if (!hasWeightToday) {
-      tasks.push({
-        id: 'task_weight',
-        title: '今日の体重を記録（タグ補正付き）',
-        subtitle: '疲労による減少トレンドを早期検知',
-        category: 'weight',
-      });
-    }
-    return tasks.slice(0, 3);
-  }
-
-  if (shiftHours === 'medium') {
-    tasks.push({
-      id: 'task_medium_strength',
-      title: '【中時間】膝つき腕立て・腹筋＆バイト後ストレッチ',
-      subtitle: '消耗を抑えつつ体幹と回復を両立',
-      category: 'strength',
-    });
+  } else {
     tasks.push({
       id: 'task_run_goal',
-      title: `ランニング目安（${plan.recommendedRunLabel}）`,
-      subtitle: '走行距離（km）の記録は累積スコアへ反映',
+      title: `ランニング（${plan.recommendedRunLabel}）`,
+      subtitle: 'スポットナビ完了または距離記録で自動達成・スコア反映',
       category: 'strength',
     });
-    tasks.push({
-      id: 'task_weight',
-      title: '体重ログ＆ベース体重チェック',
-      subtitle: '目標体重に向けた回復カーブを確認',
-      category: 'weight',
-    });
-    return tasks.slice(0, 3);
   }
 
-  // none or short
-  tasks.push({
-    id: 'task_strength',
-    title:
-      shiftHours === 'none'
-        ? '【メイン】腕立て伏せ＆腹筋（クランチ/レッグレイズ/プランク）'
-        : '【短時間】腕立て・腹筋＆バイト後ストレッチ',
-    subtitle: `${plan.shiftLabel} × ${plan.conditionLabel} に合わせたメニュー`,
-    category: 'strength',
-  });
-  tasks.push({
-    id: 'task_run_goal',
-    title: `ランニング（${plan.recommendedRunLabel}）`,
-    subtitle: '0.1km単位で記録してスコアと推移グラフに反映',
-    category: 'strength',
-  });
   tasks.push({
     id: 'task_weight',
-    title: '毎日の体重記録（食前/食後タグ選択）',
-    subtitle: 'ブレを補正したベース体重をトラッキング',
+    title: '今日の体重を記録する',
+    subtitle: 'タップして食前/食後タグ付きで体重を入力',
     category: 'weight',
+  });
+
+  tasks.push({
+    id: 'task_shift',
+    title: '今日のバイト時間を設定・記録する',
+    subtitle: `現在: ${plan.shiftLabel}（タップして変更・記録）`,
+    category: 'recovery',
   });
 
   return tasks;

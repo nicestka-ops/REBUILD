@@ -34,6 +34,7 @@ interface DashboardTabProps {
   onSelectShift: (shift: ShiftHours) => void;
   onToggleTask: (taskId: string) => void;
   onOpenWeightModal: () => void;
+  onOpenShiftModal: () => void;
   onGoToWorkout: () => void;
 }
 
@@ -47,6 +48,7 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
   onSelectShift,
   onToggleTask,
   onOpenWeightModal,
+  onOpenShiftModal,
   onGoToWorkout,
 }) => {
   const [showConditionPicker, setShowConditionPicker] = useState(false);
@@ -273,7 +275,15 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
               <button
                 key={task.id}
                 type="button"
-                onClick={() => onToggleTask(task.id)}
+                onClick={() => {
+                  if (task.id === 'task_weight') {
+                    onOpenWeightModal();
+                  } else if (task.id === 'task_shift') {
+                    onOpenShiftModal();
+                  } else {
+                    onToggleTask(task.id);
+                  }
+                }}
                 className={`w-full flex items-start gap-3 p-3 rounded-xl border text-left transition-all cursor-pointer ${
                   done
                     ? 'bg-[#CCFF00]/8 border-[#CCFF00]/40'

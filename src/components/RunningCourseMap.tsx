@@ -283,23 +283,30 @@ export const RunningCourseMap: React.FC<RunningCourseMapProps> = ({
         icon = makeBadgeIcon('折り返し', '#FFD600', '#111214', '#111214');
       } else if (spot.type === 'goal') {
         icon = makeBadgeIcon('🏁 GOAL', '#CCFF00', '#111214', '#111214');
-      } else if (spot.type === 'monument') {
+      } else if (spot.type === 'shrine') {
         icon = makeBadgeIcon(
-          isCleared ? '✓ 銅像' : '🗿 銅像',
+          isCleared ? '✓ 神社' : '⛩️ 神社',
           '#00F0FF',
           '#111214',
           '#111214'
         );
-      } else if (spot.type === 'landmark') {
+      } else if (spot.type === 'monument') {
         icon = makeBadgeIcon(
-          isCleared ? '✓ 観光' : '🏛️ 観光',
+          isCleared ? '✓ 石碑' : '🪨 石碑',
+          '#00F0FF',
+          '#111214',
+          '#111214'
+        );
+      } else if (spot.type === 'building') {
+        icon = makeBadgeIcon(
+          isCleared ? '✓ 建築物' : '🏛️ 建築物',
           '#00F0FF',
           '#111214',
           '#111214'
         );
       } else {
         icon = makeBadgeIcon(
-          isCleared ? '✓ 景色' : '🌳 景色',
+          isCleared ? '✓ 通過' : '📍 通過',
           '#00F0FF',
           '#111214',
           '#111214'
@@ -651,7 +658,9 @@ export const RunningCourseMap: React.FC<RunningCourseMapProps> = ({
             <Flag className="w-4 h-4 text-[#CCFF00] shrink-0 mt-0.5" />
           ) : activeEventSpot.type === 'turnaround' ? (
             <Compass className="w-4 h-4 text-[#FFD600] shrink-0 mt-0.5" />
-          ) : activeEventSpot.type === 'landmark' || activeEventSpot.type === 'monument' ? (
+          ) : activeEventSpot.type === 'building' ||
+            activeEventSpot.type === 'monument' ||
+            activeEventSpot.type === 'shrine' ? (
             <Landmark className="w-4 h-4 text-[#00F0FF] shrink-0 mt-0.5" />
           ) : (
             <Trees className="w-4 h-4 text-[#00F0FF] shrink-0 mt-0.5" />

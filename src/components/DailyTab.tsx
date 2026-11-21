@@ -10,6 +10,8 @@ interface DailyTabProps {
   stageInfo: StageInfo;
   score: number;
   onToggleTask: (taskId: string) => void;
+  onOpenWeightModal: () => void;
+  onOpenShiftModal: () => void;
 }
 
 export const DailyTab: React.FC<DailyTabProps> = ({
@@ -19,6 +21,8 @@ export const DailyTab: React.FC<DailyTabProps> = ({
   stageInfo,
   score,
   onToggleTask,
+  onOpenWeightModal,
+  onOpenShiftModal,
 }) => {
   const normLevel = normalizeConditionLevel(todayRecord.conditionLevel);
   const tasks = generateDailyTasks(
@@ -90,7 +94,15 @@ export const DailyTab: React.FC<DailyTabProps> = ({
               <button
                 key={task.id}
                 type="button"
-                onClick={() => onToggleTask(task.id)}
+                onClick={() => {
+                  if (task.id === 'task_weight') {
+                    onOpenWeightModal();
+                  } else if (task.id === 'task_shift') {
+                    onOpenShiftModal();
+                  } else {
+                    onToggleTask(task.id);
+                  }
+                }}
                 className={`w-full flex items-start gap-3 p-3.5 rounded-xl border text-left transition-all cursor-pointer ${
                   done
                     ? 'bg-[#CCFF00]/10 border-[#CCFF00]/45'

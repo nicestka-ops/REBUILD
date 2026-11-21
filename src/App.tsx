@@ -2,12 +2,12 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { User } from '@supabase/supabase-js';
 import {
   Bell,
+  Compass,
   Dumbbell,
   Home,
   LineChart,
   ListChecks,
   Menu,
-  Scale,
   UserCheck,
   UserCircle2,
 } from 'lucide-react';
@@ -36,10 +36,11 @@ import {
 import { RunnerCanvas } from './components/RunnerCanvas';
 import { DashboardTab } from './components/DashboardTab';
 import { WorkoutTab } from './components/WorkoutTab';
-import { WeightLogTab } from './components/WeightLogTab';
+import { SpotNavTab } from './components/SpotNavTab';
 import { TrendTab } from './components/TrendTab';
 import { DailyTab } from './components/DailyTab';
 import { QuickWeightModal } from './components/QuickWeightModal';
+import { QuickShiftModal } from './components/QuickShiftModal';
 import { AccountModal } from './components/AccountModal';
 import { SettingsModal } from './components/SettingsModal';
 
@@ -71,6 +72,7 @@ function AppContent() {
   const [jstClock, setJstClock] = useState<string>(() => getJstNowFormatted());
   const [devTestMode, setDevTestMode] = useState(false);
   const [isWeightModalOpen, setIsWeightModalOpen] = useState(false);
+  const [isShiftModalOpen, setIsShiftModalOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
   // Account & Notification modal state
@@ -250,7 +252,7 @@ function AppContent() {
   const navItems: { id: TabId; label: string; icon: typeof Home }[] = [
     { id: 'home', label: 'ホーム', icon: Home },
     { id: 'workout', label: 'ワークアウト', icon: Dumbbell },
-    { id: 'weight', label: '体重・ログ', icon: Scale },
+    { id: 'spot', label: 'スポットナビ', icon: Compass },
     { id: 'trend', label: '推移グラフ', icon: LineChart },
     { id: 'daily', label: 'デイリー', icon: ListChecks },
   ];
@@ -363,6 +365,7 @@ function AppContent() {
                 onSelectShift={handleSelectShift}
                 onToggleTask={handleToggleTask}
                 onOpenWeightModal={() => setIsWeightModalOpen(true)}
+                onOpenShiftModal={() => setIsShiftModalOpen(true)}
                 onGoToWorkout={() => setActiveTab('workout')}
               />
             </div>
@@ -383,18 +386,18 @@ function AppContent() {
               onToggleWorkout={handleToggleWorkout}
               onSaveRunningDistance={handleSaveRunningDistance}
               onSelectShift={handleSelectShift}
+              onOpenSpotNav={() => setActiveTab('spot')}
             />
           </div>
         )}
 
-        {activeTab === 'weight' && (
+        {activeTab === 'spot' && (
           <div className="max-w-3xl mx-auto px-4 pt-4">
-            <WeightLogTab
+            <SpotNavTab
               todayRecord={todayRecord}
-              profile={appState.profile}
-              latestWeight={latestWeightInfo?.weight ?? null}
-              onSelectShift={handleSelectShift}
-              onSaveWeight={handleSaveWeight}
+              todayKey={todayKey}
+              score={displayScore}
+              onSaveRunningDistance={handleSaveRunningDistance}
             />
           </div>
         )}
@@ -418,6 +421,8 @@ function AppContent() {
               stageInfo={stageInfo}
               score={displayScore}
               onToggleTask={handleToggleTask}
+              onOpenWeightModal={() => setIsWeightModalOpen(true)}
+              onOpenShiftModal={() => setIsShiftModalOpen(true)}
             />
           </div>
         )}
@@ -465,6 +470,15 @@ function AppContent() {
           initialTiming={todayRecord.weightTiming ?? 'fasted'}
           onSave={handleSaveWeight}
           onClose={() => setIsWeightModalOpen(false)}
+        />
+      )}
+
+      {/* Quick Shift Input Modal (opened from Daily Task tap) */}
+      {isShiftModalOpen && (
+        <QuickShiftModal
+          initialShift={todayRecord.shiftHours}
+          onSave={handleSelectShift}
+          onClose={() => setIsShiftModalOpen(false)}
         />
       )}
 

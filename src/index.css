@@ -90,3 +90,11 @@ input[type='range'].volt-slider::-webkit-slider-thumb {
 .leaflet-tile-pane {
   filter: invert(92%) hue-rotate(180deg) brightness(95%) contrast(90%);
 }
+
+/* Hide browser-injected play button overlays on loop runner videos */
+video::-webkit-media-controls,
+video::-webkit-media-controls-panel,
+video::-webkit-media-controls-start-playback-button {
+  display: none !important;
+  -webkit-appearance: none;
+}

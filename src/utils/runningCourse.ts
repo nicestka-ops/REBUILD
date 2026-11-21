@@ -1,6 +1,13 @@
 import { RunningRouteType } from '../types/rebuild';
 
-export type CoursePointType = 'landmark' | 'scenic' | 'monument' | 'tough' | 'turnaround' | 'goal';
+export type CoursePointType =
+  | 'shrine'
+  | 'monument'
+  | 'building'
+  | 'checkpoint'
+  | 'tough'
+  | 'turnaround'
+  | 'goal';
 
 export interface CourseSpot {
   id: string;
@@ -162,8 +169,8 @@ interface OverpassPoi {
   lat: number;
   lng: number;
   name: string;
-  type: 'landmark' | 'scenic' | 'monument';
-  categoryLabel: string;
+  type: 'shrine' | 'monument' | 'building';
+  categoryLabel: '神社' | '石碑' | '建築物';
 }
 
 async function fetchNearbyOverpassPois(
@@ -172,9 +179,9 @@ async function fetchNearbyOverpassPois(
 ): Promise<OverpassPoi[]> {
   try {
     const controller = new AbortController();
-    const tid = window.setTimeout(() => controller.abort(), 2800);
+    const tid = window.setTimeout(() => controller.abort(), 3200);
     const r = Math.min(2500, Math.max(600, Math.round(radiusM)));
-    const query = `[out:json][timeout:3];(node["tourism"~"attraction|artwork|viewpoint"]["name"](around:${r},${center[0]},${center[1]});node["historic"~"monument|memorial"]["name"](around:${r},${center[0]},${center[1]});node["leisure"~"park|garden"]["name"](around:${r},${center[0]},${center[1]}););out body 12;`;
+    const query = `[out:json][timeout:3];(nwr["amenity"="place_of_worship"]["religion"="shinto"]["name"](around:${r},${center[0]},${center[1]});nwr["historic"="shrine"]["name"](around:${r},${center[0]},${center[1]});nwr["historic"~"monument|memorial|stone"]["name"](around:${r},${center[0]},${center[1]});nwr["historic"~"castle|building"]["name"](around:${r},${center[0]},${center[1]});nwr["tourism"~"museum|attraction"]["name"](around:${r},${center[0]},${center[1]}););out center 16;`;
     const res = await fetch(
       `https://overpass-api.de/api/interpreter?data=${encodeURIComponent(query)}`,
       { signal: controller.signal }
@@ -182,36 +189,37 @@ async function fetchNearbyOverpassPois(
     window.clearTimeout(tid);
     if (!res.ok) return [];
     const data = (await res.json()) as {
-      elements?: { lat?: number; lon?: number; tags?: Record<string, string> }[];
+      elements?: {
+        lat?: number;
+        lon?: number;
+        center?: { lat?: number; lon?: number };
+        tags?: Record<string, string>;
+      }[];
     };
     const pois: OverpassPoi[] = [];
+    const seenNames = new Set<string>();
     for (const el of data.elements ?? []) {
-      if (typeof el.lat !== 'number' || typeof el.lon !== 'number' || !el.tags?.name) continue;
-      const tags = el.tags;
-      if (tags.historic === 'monument' || tags.historic === 'memorial' || tags.tourism === 'artwork') {
-        pois.push({
-          lat: el.lat,
-          lng: el.lon,
-          name: tags.name,
-          type: 'monument',
-          categoryLabel: '銅像・モニュメント',
-        });
-      } else if (tags.tourism === 'viewpoint' || tags.leisure === 'park' || tags.leisure === 'garden') {
-        pois.push({
-          lat: el.lat,
-          lng: el.lon,
-          name: tags.name,
-          type: 'scenic',
-          categoryLabel: tags.tourism === 'viewpoint' ? '景色・展望' : '公園・緑地',
-        });
+      const lat = typeof el.lat === 'number' ? el.lat : el.center?.lat;
+      const lng = typeof el.lon === 'number' ? el.lon : el.center?.lon;
+      const name = el.tags?.name;
+      if (typeof lat !== 'number' || typeof lng !== 'number' || !name || seenNames.has(name)) {
+        continue;
+      }
+      seenNames.add(name);
+      const tags = el.tags ?? {};
+      if (
+        (tags.amenity === 'place_of_worship' && tags.religion === 'shinto') ||
+        tags.historic === 'shrine'
+      ) {
+        pois.push({ lat, lng, name, type: 'shrine', categoryLabel: '神社' });
+      } else if (
+        tags.historic === 'monument' ||
+        tags.historic === 'memorial' ||
+        tags.historic === 'stone'
+      ) {
+        pois.push({ lat, lng, name, type: 'monument', categoryLabel: '石碑' });
       } else {
-        pois.push({
-          lat: el.lat,
-          lng: el.lon,
-          name: tags.name,
-          type: 'landmark',
-          categoryLabel: '観光・珍しいスポット',
-        });
+        pois.push({ lat, lng, name, type: 'building', categoryLabel: '建築物' });
       }
     }
     return pois;
@@ -309,16 +317,16 @@ async function buildCourseSpots(
   const spots: CourseSpot[] = [
     {
       id: 'spot_poi_1',
-      type: spot1Poi?.type ?? 'scenic',
-      categoryLabel: spot1Poi?.categoryLabel ?? '景色・街並み',
+      type: spot1Poi?.type ?? 'checkpoint',
+      categoryLabel: spot1Poi?.categoryLabel ?? '通過地点',
       name: spot1Poi
         ? `${spot1Poi.categoryLabel}：${spot1Poi.name}`
-        : '景色・水辺リフレッシュ地点',
+        : `チェックポイント：序盤通過（${scenic1.distanceKm.toFixed(1)}km）`,
       note: spot1Poi
-        ? `周辺スポット「${spot1Poi.name}」付近を通過。視線を上げてリラックス！`
-        : '見通しの良い景観エリア。呼吸を整えて序盤のペースを安定させよう。',
-      lat: scenic1.coord[0],
-      lng: scenic1.coord[1],
+        ? `周辺${spot1Poi.categoryLabel}「${spot1Poi.name}」付近を通過。呼吸とリズムを整えよう。`
+        : `スタートから ${scenic1.distanceKm.toFixed(1)}km の通過チェックポイント。ペースを安定させよう。`,
+      lat: spot1Poi?.lat ?? scenic1.coord[0],
+      lng: spot1Poi?.lng ?? scenic1.coord[1],
       distanceKmFromStart: scenic1.distanceKm,
     },
   ];
@@ -337,16 +345,16 @@ async function buildCourseSpots(
   } else {
     spots.push({
       id: 'spot_poi_mid',
-      type: spot2Poi?.type ?? 'monument',
-      categoryLabel: spot2Poi?.categoryLabel ?? '銅像・モニュメント',
+      type: spot2Poi?.type ?? 'checkpoint',
+      categoryLabel: spot2Poi?.categoryLabel ?? '通過地点',
       name: spot2Poi
         ? `${spot2Poi.categoryLabel}：${spot2Poi.name}`
-        : '銅像・街角ランドマーク通過点',
+        : `チェックポイント：中間通過（${mid.distanceKm.toFixed(1)}km）`,
       note: spot2Poi
-        ? `中間チェック「${spot2Poi.name}」を通過。フォームを意識して後半へ！`
-        : '中間地点のランドマーク・モニュメント付近。給水や姿勢リセットの目安に。',
-      lat: mid.coord[0],
-      lng: mid.coord[1],
+        ? `中間地点の${spot2Poi.categoryLabel}「${spot2Poi.name}」付近を通過。フォームを意識して後半へ。`
+        : `コース中間（${mid.distanceKm.toFixed(1)}km地点）の距離チェックポイント。`,
+      lat: spot2Poi?.lat ?? mid.coord[0],
+      lng: spot2Poi?.lng ?? mid.coord[1],
       distanceKmFromStart: mid.distanceKm,
     });
   }
@@ -375,16 +383,16 @@ async function buildCourseSpots(
   const spot3Poi = pois[2] ?? (routeType === 'round_trip' ? pois[1] : undefined);
   spots.push({
     id: 'spot_poi_2',
-    type: spot3Poi?.type ?? 'landmark',
-    categoryLabel: spot3Poi?.categoryLabel ?? '観光・公園',
+    type: spot3Poi?.type ?? 'checkpoint',
+    categoryLabel: spot3Poi?.categoryLabel ?? '通過地点',
     name: spot3Poi
       ? `${spot3Poi.categoryLabel}：${spot3Poi.name}`
-      : '公園・珍しい街角スポット',
+      : `チェックポイント：終盤通過（${scenic2.distanceKm.toFixed(1)}km）`,
     note: spot3Poi
-      ? `終盤の目印「${spot3Poi.name}」を通過。ゴールまであと少し！`
-      : '公園・並木道を通る終盤エリア。景色を楽しみながらラストスパート！',
-    lat: scenic2.coord[0],
-    lng: scenic2.coord[1],
+      ? `終盤の${spot3Poi.categoryLabel}「${spot3Poi.name}」付近を通過。ゴールまであと少し！`
+      : `終盤（${scenic2.distanceKm.toFixed(1)}km地点）の通過チェックポイント。ラストスパート！`,
+    lat: spot3Poi?.lat ?? scenic2.coord[0],
+    lng: spot3Poi?.lng ?? scenic2.coord[1],
     distanceKmFromStart: scenic2.distanceKm,
   });
 

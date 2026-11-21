@@ -105,6 +105,9 @@ export const AppStateProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       updateTodayRecord((rec) => ({
         ...rec,
         shiftHours,
+        completedTasks: rec.completedTasks.includes('task_shift')
+          ? rec.completedTasks
+          : [...rec.completedTasks, 'task_shift'],
       }));
     },
     [updateTodayRecord]
@@ -188,6 +191,9 @@ export const AppStateProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         rawWeight,
         weightTiming: timing,
         normalizedWeight,
+        completedTasks: rec.completedTasks.includes('task_weight')
+          ? rec.completedTasks
+          : [...rec.completedTasks, 'task_weight'],
       }));
     },
     [updateTodayRecord]

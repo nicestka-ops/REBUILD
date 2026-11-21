@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import {
   Check,
   CheckCircle2,
+  Compass,
   Dumbbell,
   Footprints,
   Pause,
@@ -12,7 +13,6 @@ import {
 } from 'lucide-react';
 import { ConditionLevel, RunningRouteType, ShiftHours, WorkoutExerciseId } from '../types/rebuild';
 import { getShiftAndConditionPlan, SHIFT_OPTIONS } from '../utils/recoveryEngine';
-import { RunningCourseMap } from './RunningCourseMap';
 
 interface WorkoutTabProps {
   conditionLevel: ConditionLevel | number | null;
@@ -31,6 +31,7 @@ interface WorkoutTabProps {
     markCompletedToday?: boolean
   ) => void;
   onSelectShift?: (shift: ShiftHours) => void;
+  onOpenSpotNav?: () => void;
 }
 
 type CategoryId = 'pushup' | 'abs' | 'stretch' | 'running';
@@ -179,10 +180,11 @@ export const WorkoutTab: React.FC<WorkoutTabProps> = ({
   runningDistanceKm,
   runningRouteType,
   runningCompletedToday,
-  todayKey,
+  todayKey: _todayKey,
   onToggleWorkout,
   onSaveRunningDistance,
   onSelectShift,
+  onOpenSpotNav,
 }) => {
   const plan = getShiftAndConditionPlan(shiftHours, conditionLevel, score);
   const [activeCategory, setActiveCategory] = useState<CategoryId>(
@@ -511,18 +513,32 @@ export const WorkoutTab: React.FC<WorkoutTabProps> = ({
         </div>
       </div>
 
-      {/* GPS Safe Running Course Map (往復 / 片道, 具体的スポット, 標高根拠付ききついポイント) */}
-      <RunningCourseMap
-        recommendedRunKm={plan.recommendedRunKm}
-        savedDistanceKm={runningDistanceKm}
-        initialRouteType={runningRouteType}
-        completedToday={runningCompletedToday}
-        todayKey={todayKey}
-        onApplyRunResult={(km, rt, toughCleared, markCompletedToday) => {
-          setRunInput(km.toFixed(1));
-          onSaveRunningDistance(km, rt, toughCleared, markCompletedToday);
-        }}
-      />
+      {onOpenSpotNav && (
+        <button
+          type="button"
+          onClick={onOpenSpotNav}
+          className="w-full rounded-2xl bg-[#1C1E22] border border-[#2C2F36] hover:border-[#CCFF00]/60 p-4 flex items-center justify-between gap-3 text-left transition-colors cursor-pointer"
+        >
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="p-2 rounded-xl bg-[#CCFF00]/15 text-[#CCFF00] shrink-0">
+              <Compass className="w-5 h-5" />
+            </div>
+            <div className="min-w-0">
+              <div className="text-sm font-extrabold text-white">
+                スポットナビでコース生成・完了する
+              </div>
+              <p className="text-[11px] text-[#8E929B] truncate">
+                {runningCompletedToday
+                  ? '本日のランニング達成済み（実績反映完了）'
+                  : '神社・石碑・建築物・きついポイント付きコースへ'}
+              </p>
+            </div>
+          </div>
+          <span className="px-2.5 py-1 rounded-lg bg-[#CCFF00] text-black text-[11px] font-extrabold shrink-0">
+            開く
+          </span>
+        </button>
+      )}
         </>
       )}
 
