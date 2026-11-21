@@ -109,12 +109,13 @@ function computePositiveDayScore(
     weightScore = Math.round(Math.max(0, Math.min(1, progress)) * 25);
   }
 
-  // 3. Workouts, Running Distance (km) & Daily Tasks (0..35)
+  // 3. Workouts, Running Distance (km), Tough Points & Daily Tasks (0..35)
   const workouts = rec?.completedWorkouts.length ?? 0;
   const tasks = rec?.completedTasks.length ?? 0;
   const runKm = rec?.runningDistanceKm ?? 0;
+  const toughPts = (rec?.runningToughPointsCleared ?? 0) * 2;
   const runPts = Math.min(12, runKm * 3);
-  const strengthScore = Math.round(Math.min(35, workouts * 6.5 + tasks * 3.5 + runPts));
+  const strengthScore = Math.round(Math.min(35, workouts * 6.5 + tasks * 3.5 + runPts + toughPts));
 
   return {
     conditionScore,

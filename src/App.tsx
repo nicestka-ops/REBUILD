@@ -16,6 +16,7 @@ import {
   AppState,
   ConditionLevel,
   ENABLE_NUTRITION,
+  RunningRouteType,
   ShiftHours,
   TabId,
   UserProfile,
@@ -297,7 +298,11 @@ export function App() {
     });
   };
 
-  const handleSaveRunningDistance = (km: number) => {
+  const handleSaveRunningDistance = (
+    km: number,
+    routeType?: RunningRouteType,
+    toughPointsCleared?: number
+  ) => {
     updateTodayRecord((rec) => {
       const nextWorkouts = [...rec.completedWorkouts];
       if (km > 0 && !nextWorkouts.includes('running_jog') && !nextWorkouts.includes('running_goal')) {
@@ -306,6 +311,11 @@ export function App() {
       return {
         ...rec,
         runningDistanceKm: km,
+        runningRouteType: routeType ?? rec.runningRouteType ?? null,
+        runningToughPointsCleared:
+          toughPointsCleared !== undefined
+            ? Math.max(rec.runningToughPointsCleared ?? 0, toughPointsCleared)
+            : rec.runningToughPointsCleared ?? 0,
         completedWorkouts: nextWorkouts,
       };
     });
@@ -496,6 +506,7 @@ export function App() {
               score={displayScore}
               completedWorkouts={todayRecord.completedWorkouts}
               runningDistanceKm={todayRecord.runningDistanceKm}
+              runningRouteType={todayRecord.runningRouteType}
               onToggleWorkout={handleToggleWorkout}
               onSaveRunningDistance={handleSaveRunningDistance}
               onSelectShift={handleSelectShift}

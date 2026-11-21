@@ -10,8 +10,9 @@ import {
   Timer,
   Zap,
 } from 'lucide-react';
-import { ConditionLevel, ShiftHours, WorkoutExerciseId } from '../types/rebuild';
+import { ConditionLevel, RunningRouteType, ShiftHours, WorkoutExerciseId } from '../types/rebuild';
 import { getShiftAndConditionPlan, SHIFT_OPTIONS } from '../utils/recoveryEngine';
+import { RunningCourseMap } from './RunningCourseMap';
 
 interface WorkoutTabProps {
   conditionLevel: ConditionLevel | number | null;
@@ -19,8 +20,13 @@ interface WorkoutTabProps {
   score: number;
   completedWorkouts: WorkoutExerciseId[];
   runningDistanceKm: number | null | undefined;
+  runningRouteType?: RunningRouteType | null;
   onToggleWorkout: (id: WorkoutExerciseId) => void;
-  onSaveRunningDistance: (km: number) => void;
+  onSaveRunningDistance: (
+    km: number,
+    routeType?: RunningRouteType,
+    toughPointsCleared?: number
+  ) => void;
   onSelectShift?: (shift: ShiftHours) => void;
 }
 
@@ -178,6 +184,7 @@ export const WorkoutTab: React.FC<WorkoutTabProps> = ({
   score,
   completedWorkouts,
   runningDistanceKm,
+  runningRouteType,
   onToggleWorkout,
   onSaveRunningDistance,
   onSelectShift,
@@ -370,6 +377,11 @@ export const WorkoutTab: React.FC<WorkoutTabProps> = ({
               <strong className="font-mono-athletic text-white">
                 {runningDistanceKm ? `${runningDistanceKm.toFixed(1)} km` : '未記録'}
               </strong>
+              {runningRouteType && (
+                <span className="ml-1.5 px-1.5 py-0.5 rounded bg-[#2C2F36] text-[10px] font-bold text-[#CCFF00]">
+                  {runningRouteType === 'round_trip' ? '往復' : '片道'}
+                </span>
+              )}
             </span>
             <span
               className={`font-mono-athletic text-[11px] font-extrabold ${
@@ -469,6 +481,16 @@ export const WorkoutTab: React.FC<WorkoutTabProps> = ({
           </button>
         </div>
       </div>
+
+      {/* GPS Safe Running Course Map (往復 / 片道, 見物スポット, きついポイント) */}
+      <RunningCourseMap
+        recommendedRunKm={plan.recommendedRunKm}
+        initialRouteType={runningRouteType}
+        onApplyRunResult={(km, rt, toughCleared) => {
+          setRunInput(km.toFixed(1));
+          onSaveRunningDistance(km, rt, toughCleared);
+        }}
+      />
 
       {/* Countdown & Interval Timer */}
       <div className="rounded-2xl bg-[#1C1E22] border border-[#2C2F36] p-4 space-y-3.5">

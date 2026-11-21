@@ -5,6 +5,8 @@ export type WeightTiming = 'fasted' | 'normal' | 'post_meal';
 
 export type ShiftHours = 'none' | 'short' | 'medium' | 'long';
 
+export type RunningRouteType = 'round_trip' | 'one_way';
+
 // 3-level condition: 1 = 不調・疲れ気味, 2 = 普通, 3 = 好調
 export type ConditionLevel = 1 | 2 | 3;
 
@@ -39,6 +41,8 @@ export interface DailyRecord {
   normalizedWeight: number | null;
   shiftHours: ShiftHours;
   runningDistanceKm?: number | null;
+  runningRouteType?: RunningRouteType | null;
+  runningToughPointsCleared?: number;
   completedTasks: string[];
   completedWorkouts: WorkoutExerciseId[];
   // Reserved field for future nutrition feature
