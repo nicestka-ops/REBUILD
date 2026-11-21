@@ -485,6 +485,7 @@ export const WorkoutTab: React.FC<WorkoutTabProps> = ({
       {/* GPS Safe Running Course Map (往復 / 片道, 見物スポット, きついポイント) */}
       <RunningCourseMap
         recommendedRunKm={plan.recommendedRunKm}
+        savedDistanceKm={runningDistanceKm}
         initialRouteType={runningRouteType}
         onApplyRunResult={(km, rt, toughCleared) => {
           setRunInput(km.toFixed(1));

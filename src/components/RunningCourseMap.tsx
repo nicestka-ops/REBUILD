@@ -4,6 +4,7 @@ import 'leaflet/dist/leaflet.css';
 import {
   AlertTriangle,
   Award,
+  CheckCircle2,
   Compass,
   Flag,
   LocateFixed,
@@ -27,6 +28,7 @@ import {
 
 interface RunningCourseMapProps {
   recommendedRunKm: number;
+  savedDistanceKm?: number | null;
   initialRouteType?: RunningRouteType | null;
   onApplyRunResult: (
     km: number,
@@ -46,6 +48,7 @@ function makeBadgeIcon(label: string, bg: string, border: string, text: string =
 
 export const RunningCourseMap: React.FC<RunningCourseMapProps> = ({
   recommendedRunKm,
+  savedDistanceKm,
   initialRouteType,
   onApplyRunResult,
 }) => {
@@ -82,6 +85,7 @@ export const RunningCourseMap: React.FC<RunningCourseMapProps> = ({
   // Time-to-distance fallback helper (minutes at 6:00/km pace)
   const [minutesInput, setMinutesInput] = useState('30');
   const [savedBanner, setSavedBanner] = useState(false);
+  const [isCompletedLocked, setIsCompletedLocked] = useState(false);
 
   const manualPickRef = useRef(manualPickMode);
   manualPickRef.current = manualPickMode;
@@ -318,15 +322,23 @@ export const RunningCourseMap: React.FC<RunningCourseMapProps> = ({
       ? Math.round((parsedMinutes / 6) * 10) / 10
       : 0;
 
-  const commitDistance = (km: number) => {
+  const effectiveRunKm = trackedKm >= 0.1 ? trackedKm : savedDistanceKm ?? 0;
+  const isPlannedGoalMet = effectiveRunKm >= plannedKm;
+  const confirmTargetKm =
+    effectiveRunKm >= 0.1 ? effectiveRunKm : convertedKmFromTime || plannedKm;
+
+  const commitDistance = (km: number, lockCompletion: boolean = false) => {
     if (km <= 0) return;
     onApplyRunResult(km, routeType, toughClearedCount);
     setSavedBanner(true);
-    window.setTimeout(() => setSavedBanner(false), 1800);
+    if (lockCompletion) {
+      setIsCompletedLocked(true);
+    }
+    window.setTimeout(() => setSavedBanner(false), 2200);
   };
 
   return (
-    <div className="rounded-2xl bg-[#1C1E22] border border-[#2C2F36] p-4 space-y-3">
+    <div className="rounded-2xl bg-[#1C1E22] border border-[#2C2F36] p-4 space-y-3 max-w-full overflow-hidden">
       {/* Header + Route Type Selector (往復 / 片道) */}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">
@@ -541,35 +553,71 @@ export const RunningCourseMap: React.FC<RunningCourseMapProps> = ({
         </div>
       )}
 
-      {/* GPS / Time-Converted Distance Save Bar */}
-      <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-[#2C2F36]">
-        <div className="flex items-center gap-1.5 text-[11px]">
-          <span className="text-[#8E929B]">時間換算:</span>
-          <input
-            type="number"
-            min="1"
-            max="180"
-            value={minutesInput}
-            onChange={(e) => setMinutesInput(e.target.value)}
-            className="w-14 px-2 py-1 rounded bg-[#111214] border border-[#2C2F36] font-mono-athletic text-white text-center"
-          />
-          <span className="text-[#8E929B]">分 ≒</span>
-          <strong className="font-mono-athletic text-[#CCFF00]">{convertedKmFromTime.toFixed(1)} km</strong>
+      {/* GPS / Time-Converted Distance Save Bar + Course Complete Button */}
+      <div className="space-y-2.5 pt-2 border-t border-[#2C2F36]">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-1.5 text-[11px]">
+            <span className="text-[#8E929B]">時間換算:</span>
+            <input
+              type="number"
+              min="1"
+              max="180"
+              value={minutesInput}
+              onChange={(e) => setMinutesInput(e.target.value)}
+              className="w-14 px-2 py-1 rounded bg-[#111214] border border-[#2C2F36] font-mono-athletic text-white text-center"
+            />
+            <span className="text-[#8E929B]">分 ≒</span>
+            <strong className="font-mono-athletic text-[#CCFF00]">{convertedKmFromTime.toFixed(1)} km</strong>
+          </div>
+
+          <button
+            type="button"
+            onClick={() =>
+              commitDistance(trackedKm >= 0.1 ? trackedKm : convertedKmFromTime || plannedKm, false)
+            }
+            className="px-3 py-1.5 rounded-lg bg-[#111214] border border-[#2C2F36] text-white hover:border-[#CCFF00]/60 font-bold text-[11px] cursor-pointer"
+          >
+            {savedBanner
+              ? 'ログに反映しました!'
+              : trackedKm >= 0.1
+              ? `GPS距離 (${trackedKm.toFixed(1)}km) を一時反映`
+              : `換算距離 (${convertedKmFromTime.toFixed(1)}km) を反映`}
+          </button>
         </div>
 
-        <button
-          type="button"
-          onClick={() =>
-            commitDistance(trackedKm >= 0.1 ? trackedKm : convertedKmFromTime || plannedKm)
-          }
-          className="px-3.5 py-2 rounded-xl bg-[#CCFF00] text-black font-extrabold text-xs hover:brightness-105 cursor-pointer"
-        >
-          {savedBanner
-            ? 'ログに反映しました!'
-            : trackedKm >= 0.1
-            ? `GPS距離 (${trackedKm.toFixed(1)}km) をログに反映`
-            : `換算距離 (${convertedKmFromTime.toFixed(1)}km) をログに反映`}
-        </button>
+        {/* Prominent Course Complete & Confirm Button */}
+        {isCompletedLocked ? (
+          <div className="w-full rounded-xl bg-[#CCFF00]/15 border border-[#CCFF00]/60 px-4 py-3 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 text-xs font-extrabold text-[#CCFF00]">
+              <CheckCircle2 className="w-4 h-4 shrink-0" />
+              <span>ランニング完了・記録を確定しました！（スコア＆推移に反映済み）</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsCompletedLocked(false)}
+              className="text-[10px] font-bold text-[#8E929B] hover:text-white underline shrink-0 cursor-pointer"
+            >
+              再記録
+            </button>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => commitDistance(confirmTargetKm, true)}
+            className={`w-full py-3 px-4 rounded-xl font-extrabold text-xs tracking-wide flex items-center justify-center gap-2 transition-all cursor-pointer ${
+              isPlannedGoalMet
+                ? 'bg-[#CCFF00] text-black shadow-[0_0_20px_rgba(204,255,0,0.35)] hover:brightness-105'
+                : 'bg-[#2C2F36] text-white border border-[#3A3E47] hover:border-[#CCFF00]/60'
+            }`}
+          >
+            <CheckCircle2 className="w-4 h-4" />
+            <span>
+              {isPlannedGoalMet
+                ? `計画距離達成！完了して記録 (${effectiveRunKm.toFixed(1)}km)`
+                : `完了（記録を確定） (${confirmTargetKm.toFixed(1)}km)`}
+            </span>
+          </button>
+        )}
       </div>
     </div>
   );
