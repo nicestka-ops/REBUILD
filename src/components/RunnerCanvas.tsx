@@ -7,6 +7,8 @@ interface RunnerCanvasProps {
   stageInfo: StageInfo;
   streakDays: number;
   debugScore: number | null;
+  isLoggedIn: boolean;
+  showTestControls: boolean;
   onDebugScoreChange: (val: number | null) => void;
 }
 
@@ -119,15 +121,26 @@ export const RunnerCanvas: React.FC<RunnerCanvasProps> = ({
   stageInfo,
   streakDays,
   debugScore,
+  isLoggedIn,
+  showTestControls,
   onDebugScoreChange,
 }) => {
-  const [showDebug, setShowDebug] = useState(true);
+  const [showDebug, setShowDebug] = useState(showTestControls);
   const [autoPlay, setAutoPlay] = useState(false);
   const videoRefs = useRef<Partial<Record<VideoKey, HTMLVideoElement | null>>>({});
 
   const stage = stageInfo.stage;
   const activeCfg = getStageVisualConfig(stage);
   const base = import.meta.env.BASE_URL || './';
+
+  useEffect(() => {
+    if (!showTestControls) {
+      setAutoPlay(false);
+      setShowDebug(false);
+    } else {
+      setShowDebug(true);
+    }
+  }, [showTestControls]);
 
   useEffect(() => {
     if (!autoPlay) return;
@@ -272,110 +285,112 @@ export const RunnerCanvas: React.FC<RunnerCanvasProps> = ({
         </div>
       </div>
 
-      {/* Bottom Bar: Stage 0-10 Showcase & Debug Slider */}
-      <div className="absolute bottom-2.5 right-3 left-3 z-20 flex justify-end">
-        {!showDebug ? (
-          <button
-            type="button"
-            onClick={() => setShowDebug(true)}
-            className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#1C1E22]/90 border border-[#2C2F36] text-[11px] font-semibold text-[#8E929B] hover:text-[#CCFF00] hover:border-[#CCFF00]/50 transition-colors cursor-pointer"
-            title="ステージ動作確認スライダー"
-          >
-            <SlidersHorizontal className="w-3.5 h-3.5" />
-            <span>STAGE TEST</span>
-          </button>
-        ) : (
-          <div className="w-full max-w-xl flex flex-col gap-1.5 px-3 py-2 rounded-xl bg-[#1C1E22]/95 border border-[#CCFF00]/40 shadow-xl backdrop-blur-md">
-            <div className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
-                <span className="text-[11px] font-bold text-[#CCFF00] whitespace-nowrap">
-                  TEST: {debugScore ?? score}pt (ST.{stageInfo.stage})
-                </span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (!autoPlay && debugScore === null) {
-                      onDebugScoreChange(STAGE_SAMPLE_SCORES[0]);
-                    }
-                    setAutoPlay((v) => !v);
-                  }}
-                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-extrabold cursor-pointer ${
-                    autoPlay
-                      ? 'bg-[#CCFF00] text-black'
-                      : 'bg-[#2C2F36] text-white hover:bg-[#3A3E47]'
-                  }`}
-                >
-                  {autoPlay ? <Pause className="w-2.5 h-2.5 fill-black" /> : <Play className="w-2.5 h-2.5 fill-white" />}
-                  <span>{autoPlay ? 'STOP' : 'AUTO 0→10'}</span>
-                </button>
-              </div>
+      {/* Bottom Bar: Stage 0-10 Showcase & Debug Slider (Visible when not logged in or Dev Test Mode is ON) */}
+      {showTestControls && (
+        <div className="absolute bottom-2.5 right-3 left-3 z-20 flex justify-end">
+          {!showDebug ? (
+            <button
+              type="button"
+              onClick={() => setShowDebug(true)}
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#1C1E22]/90 border border-[#2C2F36] text-[11px] font-semibold text-[#8E929B] hover:text-[#CCFF00] hover:border-[#CCFF00]/50 transition-colors cursor-pointer"
+              title="ステージ動作確認スライダー"
+            >
+              <SlidersHorizontal className="w-3.5 h-3.5" />
+              <span>STAGE TEST</span>
+            </button>
+          ) : (
+            <div className="w-full max-w-xl flex flex-col gap-1.5 px-3 py-2 rounded-xl bg-[#1C1E22]/95 border border-[#CCFF00]/40 shadow-xl backdrop-blur-md">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] font-bold text-[#CCFF00] whitespace-nowrap">
+                    {!isLoggedIn ? 'DEMO' : 'TEST'}: {debugScore ?? score}pt (ST.{stageInfo.stage})
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!autoPlay && debugScore === null) {
+                        onDebugScoreChange(STAGE_SAMPLE_SCORES[0]);
+                      }
+                      setAutoPlay((v) => !v);
+                    }}
+                    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-extrabold cursor-pointer ${
+                      autoPlay
+                        ? 'bg-[#CCFF00] text-black'
+                        : 'bg-[#2C2F36] text-white hover:bg-[#3A3E47]'
+                    }`}
+                  >
+                    {autoPlay ? <Pause className="w-2.5 h-2.5 fill-black" /> : <Play className="w-2.5 h-2.5 fill-white" />}
+                    <span>{autoPlay ? 'STOP' : 'AUTO 0→10'}</span>
+                  </button>
+                </div>
 
-              <div className="flex items-center gap-2">
-                <input
-                  type="range"
-                  min={0}
-                  max={100}
-                  value={debugScore ?? score}
-                  onChange={(e) => {
-                    setAutoPlay(false);
-                    onDebugScoreChange(Number(e.target.value));
-                  }}
-                  className="volt-slider w-24 sm:w-32"
-                />
-                {debugScore !== null && (
+                <div className="flex items-center gap-2">
+                  <input
+                    type="range"
+                    min={0}
+                    max={100}
+                    value={debugScore ?? score}
+                    onChange={(e) => {
+                      setAutoPlay(false);
+                      onDebugScoreChange(Number(e.target.value));
+                    }}
+                    className="volt-slider w-24 sm:w-32"
+                  />
+                  {debugScore !== null && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAutoPlay(false);
+                        onDebugScoreChange(null);
+                      }}
+                      className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-[#2C2F36] text-white hover:bg-[#3A3E47] cursor-pointer"
+                    >
+                      実値
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => {
                       setAutoPlay(false);
                       onDebugScoreChange(null);
+                      setShowDebug(false);
                     }}
-                    className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-[#2C2F36] text-white hover:bg-[#3A3E47] cursor-pointer"
+                    className="text-[#8E929B] hover:text-white cursor-pointer"
+                    aria-label="Close debug slider"
                   >
-                    実値
+                    <X className="w-4 h-4" />
                   </button>
-                )}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setAutoPlay(false);
-                    onDebugScoreChange(null);
-                    setShowDebug(false);
-                  }}
-                  className="text-[#8E929B] hover:text-white cursor-pointer"
-                  aria-label="Close debug slider"
-                >
-                  <X className="w-4 h-4" />
-                </button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-11 gap-1">
+                {STAGE_SAMPLE_SCORES.map((sampleScore, idx) => {
+                  const active = stageInfo.stage === idx && debugScore !== null;
+                  return (
+                    <button
+                      key={idx}
+                      type="button"
+                      onClick={() => {
+                        setAutoPlay(false);
+                        onDebugScoreChange(sampleScore);
+                      }}
+                      className={`py-1 rounded text-[10px] font-mono-athletic font-extrabold transition-colors cursor-pointer ${
+                        active
+                          ? idx === 0
+                            ? 'bg-[#FF3B30] text-white'
+                            : 'bg-[#CCFF00] text-black'
+                          : 'bg-[#111214] text-[#8E929B] hover:text-white border border-[#2C2F36]'
+                      }`}
+                    >
+                      {idx}
+                    </button>
+                  );
+                })}
               </div>
             </div>
-
-            <div className="grid grid-cols-11 gap-1">
-              {STAGE_SAMPLE_SCORES.map((sampleScore, idx) => {
-                const active = stageInfo.stage === idx && debugScore !== null;
-                return (
-                  <button
-                    key={idx}
-                    type="button"
-                    onClick={() => {
-                      setAutoPlay(false);
-                      onDebugScoreChange(sampleScore);
-                    }}
-                    className={`py-1 rounded text-[10px] font-mono-athletic font-extrabold transition-colors cursor-pointer ${
-                      active
-                        ? idx === 0
-                          ? 'bg-[#FF3B30] text-white'
-                          : 'bg-[#CCFF00] text-black'
-                        : 'bg-[#111214] text-[#8E929B] hover:text-white border border-[#2C2F36]'
-                    }`}
-                  >
-                    {idx}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        )}
-      </div>
+          )}
+        </div>
+      )}
     </section>
   );
 };

@@ -76,23 +76,35 @@ function createInitialSeedState(): AppState {
   };
 }
 
+export function createEmptyAppState(): AppState {
+  return {
+    records: {},
+    profile: {
+      baselineWeight: 54.0,
+      targetWeight: 61.0,
+      defaultShiftHours: 'none',
+    },
+    nutritionReserved: null,
+  };
+}
+
 export function loadAppState(): AppState {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) {
-      const seed = createInitialSeedState();
-      saveAppState(seed);
-      return seed;
+      const empty = createEmptyAppState();
+      saveAppState(empty);
+      return empty;
     }
     const parsed = JSON.parse(raw) as AppState;
     if (!parsed || typeof parsed !== 'object' || !parsed.records || !parsed.profile) {
-      const seed = createInitialSeedState();
-      saveAppState(seed);
-      return seed;
+      const empty = createEmptyAppState();
+      saveAppState(empty);
+      return empty;
     }
     return parsed;
   } catch {
-    return createInitialSeedState();
+    return createEmptyAppState();
   }
 }
 

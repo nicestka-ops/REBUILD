@@ -71,6 +71,7 @@ export function App() {
   const [todayKey, setTodayKey] = useState<string>(() => getJstRebuildDateKey());
   const [jstClock, setJstClock] = useState<string>(() => getJstNowFormatted());
   const [debugScore, setDebugScore] = useState<number | null>(null);
+  const [devTestMode, setDevTestMode] = useState(false);
   const [isWeightModalOpen, setIsWeightModalOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
@@ -102,6 +103,14 @@ export function App() {
   useEffect(() => {
     registerRebuildServiceWorker();
   }, []);
+
+  // Automatically disable unauthenticated test UI & preview score the moment user logs in
+  useEffect(() => {
+    if (user) {
+      setDebugScore(null);
+      setDevTestMode(false);
+    }
+  }, [user]);
 
   useEffect(() => {
     if (!supabaseClient) {
@@ -444,6 +453,8 @@ export function App() {
               stageInfo={stageInfo}
               streakDays={streakDays}
               debugScore={debugScore}
+              isLoggedIn={Boolean(user)}
+              showTestControls={!user || devTestMode}
               onDebugScoreChange={setDebugScore}
             />
 
@@ -561,6 +572,11 @@ export function App() {
           profile={appState.profile}
           realScore={breakdown.totalScore}
           debugScore={debugScore}
+          devTestMode={devTestMode}
+          onToggleDevTestMode={(enabled) => {
+            setDevTestMode(enabled);
+            if (!enabled) setDebugScore(null);
+          }}
           onUpdateProfile={handleUpdateProfile}
           onDebugScoreChange={setDebugScore}
           onResetDemo={handleResetDemo}

@@ -7,6 +7,8 @@ interface SettingsModalProps {
   profile: UserProfile;
   realScore: number;
   debugScore: number | null;
+  devTestMode: boolean;
+  onToggleDevTestMode: (enabled: boolean) => void;
   onUpdateProfile: (next: UserProfile) => void;
   onDebugScoreChange: (val: number | null) => void;
   onResetDemo: () => void;
@@ -17,6 +19,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   profile,
   realScore,
   debugScore,
+  devTestMode,
+  onToggleDevTestMode,
   onUpdateProfile,
   onDebugScoreChange,
   onResetDemo,
@@ -128,37 +132,62 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           プロフィール設定を保存
         </button>
 
-        {/* Debug Score Slider */}
+        {/* Developer / Verification Test Mode Switch & Slider */}
         <div className="p-3.5 rounded-xl bg-[#111214] border border-[#2C2F36] space-y-2.5">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2 text-xs font-extrabold text-white">
               <SlidersHorizontal className="w-4 h-4 text-[#CCFF00]" />
-              <span>デバッグ用スコア操作 (0〜100)</span>
+              <span>テストモード（ステージ確認）</span>
             </div>
-            <span className="font-mono-athletic text-xs font-bold text-[#CCFF00]">
-              {debugScore ?? realScore} pt
-            </span>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={devTestMode}
+              onClick={() => onToggleDevTestMode(!devTestMode)}
+              className={`px-2.5 py-1 rounded-full text-[11px] font-extrabold transition-colors cursor-pointer ${
+                devTestMode
+                  ? 'bg-[#CCFF00] text-black'
+                  : 'bg-[#2C2F36] text-[#8E929B] hover:text-white'
+              }`}
+            >
+              {devTestMode ? 'ON' : 'OFF'}
+            </button>
           </div>
-          <input
-            type="range"
-            min={0}
-            max={100}
-            value={debugScore ?? realScore}
-            onChange={(e) => onDebugScoreChange(Number(e.target.value))}
-            className="volt-slider w-full"
-          />
-          <div className="flex items-center justify-between text-[11px] text-[#8E929B]">
-            <span>現在: {debugScore !== null ? 'テスト値プレビュー中' : '実累積スコア'}</span>
-            {debugScore !== null && (
-              <button
-                type="button"
-                onClick={() => onDebugScoreChange(null)}
-                className="px-2 py-0.5 rounded bg-[#2C2F36] text-white font-bold cursor-pointer"
-              >
-                実値に戻す
-              </button>
-            )}
-          </div>
+
+          {devTestMode ? (
+            <>
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-[#8E929B]">デバッグ用スコア操作 (0〜100)</span>
+                <span className="font-mono-athletic font-bold text-[#CCFF00]">
+                  {debugScore ?? realScore} pt
+                </span>
+              </div>
+              <input
+                type="range"
+                min={0}
+                max={100}
+                value={debugScore ?? realScore}
+                onChange={(e) => onDebugScoreChange(Number(e.target.value))}
+                className="volt-slider w-full"
+              />
+              <div className="flex items-center justify-between text-[11px] text-[#8E929B]">
+                <span>現在: {debugScore !== null ? 'テスト値プレビュー中' : '実累積スコア'}</span>
+                {debugScore !== null && (
+                  <button
+                    type="button"
+                    onClick={() => onDebugScoreChange(null)}
+                    className="px-2 py-0.5 rounded bg-[#2C2F36] text-white font-bold cursor-pointer"
+                  >
+                    実値に戻す
+                  </button>
+                )}
+              </div>
+            </>
+          ) : (
+            <p className="text-[11px] text-[#8E929B]">
+              ONにすると、ログイン中でもランナー画面のステージ確認スライダーを使用できます。
+            </p>
+          )}
         </div>
 
         {/* Future Nutrition Flag Status & Demo Reset */}

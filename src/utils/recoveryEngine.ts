@@ -137,22 +137,53 @@ export function calculateScoreBreakdown(
   dateKey: string
 ): ScoreBreakdown {
   const MAX_DAILY_DELTA = 8;
+  const INITIAL_DEFAULT_SCORE = 50;
   const horizonKeys = getPastDateKeys(dateKey, 14);
 
-  let runningScore = 40;
-  const firstRec = records[horizonKeys[0]];
-  if (hasAnyDailyAction(firstRec)) {
-    runningScore = Math.max(30, computePositiveDayScore(records, profile, horizonKeys[0]).dailyTotal);
+  const actionKeys = Object.keys(records)
+    .filter((k) => k <= dateKey && hasAnyDailyAction(records[k]))
+    .sort();
+
+  const todayParts = computePositiveDayScore(records, profile, dateKey);
+
+  // 7-day strength display for STRENGTH card (0..30)
+  const past7 = getPastDateKeys(dateKey, 7);
+  let workoutUnits = 0;
+  for (const k of past7) {
+    const r = records[k];
+    if (!r) continue;
+    workoutUnits +=
+      r.completedWorkouts.length * 1.5 +
+      r.completedTasks.length * 0.6 +
+      (r.runningDistanceKm ?? 0) * 0.8;
+  }
+  const displayStrength = Math.round(Math.min(30, workoutUnits * 1.4));
+
+  // New user / no recorded logs yet: start at 50 (Stage 5: ライトジョギング)
+  if (actionKeys.length === 0) {
+    return {
+      conditionScore: todayParts.conditionScore,
+      weightScore: todayParts.weightScore,
+      strengthScore: displayStrength,
+      totalScore: INITIAL_DEFAULT_SCORE,
+    };
   }
 
-  for (let i = 1; i < horizonKeys.length; i++) {
+  const firstActionKey = actionKeys[0];
+  let runningScore = INITIAL_DEFAULT_SCORE;
+
+  for (let i = 0; i < horizonKeys.length; i++) {
     const dk = horizonKeys[i];
+    if (dk < firstActionKey) {
+      continue;
+    }
+
     const rec = records[dk];
     const isToday = dk === dateKey;
     const acted = hasAnyDailyAction(rec);
 
     if (!acted) {
-      // Only penalize completed past days where the user did NOTHING; never penalize today while in progress
+      // Only penalize completed past days AFTER the user's first action where they did NOTHING
       if (!isToday) {
         runningScore = Math.max(0, runningScore - 6);
       }
@@ -175,21 +206,6 @@ export function calculateScoreBreakdown(
     const clampedDelta = Math.min(MAX_DAILY_DELTA, rawDelta);
     runningScore = Math.max(0, Math.min(100, runningScore + clampedDelta));
   }
-
-  const todayParts = computePositiveDayScore(records, profile, dateKey);
-
-  // 7-day strength display for STRENGTH card (0..30)
-  const past7 = getPastDateKeys(dateKey, 7);
-  let workoutUnits = 0;
-  for (const k of past7) {
-    const r = records[k];
-    if (!r) continue;
-    workoutUnits +=
-      r.completedWorkouts.length * 1.5 +
-      r.completedTasks.length * 0.6 +
-      (r.runningDistanceKm ?? 0) * 0.8;
-  }
-  const displayStrength = Math.round(Math.min(30, workoutUnits * 1.4));
 
   return {
     conditionScore: todayParts.conditionScore,
