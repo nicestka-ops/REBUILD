@@ -50,7 +50,7 @@ interface AppStateContextValue {
     toughPointsCleared?: number,
     markCompletedToday?: boolean
   ) => void;
-  saveWeight: (rawWeight: number, timing: WeightTiming) => void;
+  saveWeight: (rawWeight: number, timing: WeightTiming, targetDateKey?: string) => void;
   updateProfile: (nextProfile: UserProfile) => void;
   resetDemo: () => AppState;
   clearAllData: () => AppState;
@@ -184,19 +184,31 @@ export const AppStateProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   );
 
   const saveWeight = useCallback(
-    (rawWeight: number, timing: WeightTiming) => {
+    (rawWeight: number, timing: WeightTiming, targetDateKey?: string) => {
       const normalizedWeight = computeNormalizedWeight(rawWeight, timing);
-      updateTodayRecord((rec) => ({
-        ...rec,
-        rawWeight,
-        weightTiming: timing,
-        normalizedWeight,
-        completedTasks: rec.completedTasks.includes('task_weight')
-          ? rec.completedTasks
-          : [...rec.completedTasks, 'task_weight'],
-      }));
+      const dk = targetDateKey && targetDateKey <= todayKey ? targetDateKey : todayKey;
+      commitAppState((prev) => {
+        const current =
+          prev.records[dk] ??
+          createEmptyDailyRecord(dk, prev.profile.defaultShiftHours ?? 'none');
+        return {
+          ...prev,
+          records: {
+            ...prev.records,
+            [dk]: {
+              ...current,
+              rawWeight,
+              weightTiming: timing,
+              normalizedWeight,
+              completedTasks: current.completedTasks.includes('task_weight')
+                ? current.completedTasks
+                : [...current.completedTasks, 'task_weight'],
+            },
+          },
+        };
+      });
     },
-    [updateTodayRecord]
+    [commitAppState, todayKey]
   );
 
   const updateProfile = useCallback(

@@ -408,6 +408,7 @@ function AppContent() {
               todayKey={todayKey}
               records={appState.records}
               profile={appState.profile}
+              onOpenWeightModal={() => setIsWeightModalOpen(true)}
             />
           </div>
         )}
@@ -459,9 +460,11 @@ function AppContent() {
         </div>
       </nav>
 
-      {/* Quick Weight Modal */}
+      {/* Quick Weight Modal (supports today + past-date backfill) */}
       {isWeightModalOpen && (
         <QuickWeightModal
+          todayKey={todayKey}
+          records={appState.records}
           initialWeight={
             todayRecord.rawWeight ??
             latestWeightInfo?.weight ??

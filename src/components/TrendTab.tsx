@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Footprints, TrendingUp } from 'lucide-react';
+import { CalendarPlus, Footprints, TrendingUp } from 'lucide-react';
 import { DailyRecord, UserProfile } from '../types/rebuild';
 import { formatShortDate, getPastDateKeys } from '../utils/dateJst';
 import { calculateScoreBreakdown } from '../utils/recoveryEngine';
@@ -8,12 +8,14 @@ interface TrendTabProps {
   todayKey: string;
   records: Record<string, DailyRecord>;
   profile: UserProfile;
+  onOpenWeightModal?: () => void;
 }
 
 export const TrendTab: React.FC<TrendTabProps> = ({
   todayKey,
   records,
   profile,
+  onOpenWeightModal,
 }) => {
   const [range, setRange] = useState<'week' | 'month'>('week');
 
@@ -100,13 +102,25 @@ export const TrendTab: React.FC<TrendTabProps> = ({
   return (
     <div className="space-y-4">
       <div className="rounded-2xl bg-[#1C1E22] border border-[#2C2F36] p-4 space-y-3">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <TrendingUp className="w-4 h-4 text-[#CCFF00]" />
             <h2 className="text-sm font-extrabold text-white tracking-wide">
               WEIGHT &amp; SCORE TREND
             </h2>
           </div>
+
+          <div className="flex items-center gap-1.5">
+            {onOpenWeightModal && (
+              <button
+                type="button"
+                onClick={onOpenWeightModal}
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[#111214] border border-[#CCFF00]/40 text-[11px] font-bold text-[#CCFF00] hover:bg-[#CCFF00]/10 cursor-pointer"
+              >
+                <CalendarPlus className="w-3.5 h-3.5" />
+                <span>過去日も登録</span>
+              </button>
+            )}
 
           <div className="flex items-center gap-1 bg-[#111214] p-1 rounded-lg border border-[#2C2F36]">
             <button
@@ -127,6 +141,7 @@ export const TrendTab: React.FC<TrendTabProps> = ({
             >
               月間 (30D)
             </button>
+          </div>
           </div>
         </div>
 
